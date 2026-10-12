@@ -3,8 +3,8 @@
 	<packageinformation>
 		<packagename><![CDATA[mPDF]]></packagename>
 		<packagename languagecode="de"><![CDATA[mPDF]]></packagename>
-		<packagedescription><![CDATA[Bundles the mPDF library (HTML to PDF converter) for use by other packages.]]></packagedescription>
-		<packagedescription languagecode="de"><![CDATA[Stellt die mPDF-Bibliothek (HTML-zu-PDF-Konverter) für andere Pakete bereit.]]></packagedescription>
+		<packagedescription><![CDATA[Bundles the mPDF library (HTML to PDF converter) for use by other packages. Developed by Matěj Humpál and contributors: https://github.com/mpdf/mpdf]]></packagedescription>
+		<packagedescription languagecode="de"><![CDATA[Stellt die mPDF-Bibliothek (HTML-zu-PDF-Konverter) für andere Pakete bereit. Entwickelt von Matěj Humpál und Mitwirkenden: https://github.com/mpdf/mpdf]]></packagedescription>
 		<isapplication>0</isapplication>
 		<version>8.3.1</version>
 		<date>2026-07-20</date>
