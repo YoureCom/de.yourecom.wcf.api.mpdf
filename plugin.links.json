@@ -1,0 +1,17 @@
+{
+  "$schema": "https://yourecom.de/schemas/plugin-links.v1.json",
+  "version": 1,
+  "links": {
+    "workplace": [
+      {
+        "id": "workplace-main",
+        "label": "Support - Arbeitsplatz",
+        "url": "https://yourecom.de/workplace/index.php?category-task-list/121/",
+        "primary": true
+      }
+    ],
+    "shop": {
+      "url": "https://yourecom.de/shop/index.php?product/107-entwickler-mpdf-bibliothek/"
+    }
+  }
+}
