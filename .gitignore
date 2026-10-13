@@ -1,3 +1,15 @@
-/.packager
+# >>> managed by _dev/standard (edit gitignore.txt there, not here) >>>
 /.packager/
+/.vscode/
+/.idea/
+/node_modules/
+/var/
+/vendor/
+/.phpunit.cache/
+/.phpunit.result.cache
+/coverage/
+/test-results/
+/playwright-report/
 /.php-cs-fixer.cache
+/composer.lock
+# <<< managed by _dev/standard <<<
