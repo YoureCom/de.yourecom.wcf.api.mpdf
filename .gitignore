@@ -12,4 +12,5 @@
 /playwright-report/
 /.php-cs-fixer.cache
 /composer.lock
+*.code-workspace
 # <<< managed by _dev/standard <<<
