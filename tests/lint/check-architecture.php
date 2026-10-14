@@ -21,6 +21,9 @@
  *                         bootstrap (keep only <delete>)
  *  - legacy-ajax:   TypeScript, JavaScript and templates call DatabaseObjectActions (`WoltLabSuite/Core/Ajax`,
  *                   `dboAction`, `className: "…\data\…Action"`, `WCF.Action.*`, `ajax-proxy`), use RPC endpoints
+ *  - core-table-write: no INSERT/UPDATE/DELETE/REPLACE on the tables of a base plugin (`coreTables` in
+ *                   tests/lint/config.php), write through the commands of the base plugin; reading and the update
+ *                   scripts in files/acp stay allowed
  *
  * Known findings that cannot be changed yet are listed in tests/lint/config.php (`architectureKnown`: relative file
  * => list of rules); entries that no longer match make the check fail, so the list can only shrink.
@@ -172,6 +175,19 @@ foreach (files(templateDirectories(), ['.tpl']) as $relative => $path) {
 $clipboardXml = ROOT . '/clipboardAction.xml';
 if (\is_file($clipboardXml) && \str_contains((string)\file_get_contents($clipboardXml), '<import>')) {
     $report('clipboardAction.xml', 'clipboard', 'installs clipboard actions, use bulk interactions (keep only <delete>)');
+}
+
+$coreTables = config()['coreTables'];
+if ($coreTables !== []) {
+    $tables = \implode('|', \array_map(static fn (string $table): string => \preg_quote($table, '~'), $coreTables));
+    $pattern = '~\b(?:INSERT\s+(?:IGNORE\s+)?INTO|REPLACE\s+INTO|UPDATE|DELETE\s+FROM)\s+(' . $tables . ')\b~i';
+
+    // update scripts in files/acp migrate data and may write the tables directly
+    foreach (files(['files/lib', 'files_wcf/lib'], ['.php']) as $relative => $path) {
+        if (\preg_match($pattern, (string)\file_get_contents($path), $match)) {
+            $report($relative, 'core-table-write', "writes {$match[1]} directly, use the commands of the base plugin");
+        }
+    }
 }
 
 $eventListenerXml = ROOT . '/eventListener.xml';

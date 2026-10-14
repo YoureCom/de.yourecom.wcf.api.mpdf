@@ -34,6 +34,7 @@ function config(): array
         'architectureKnown' => $config['architectureKnown'] ?? [],
         'jsBuildDir' => $config['jsBuildDir'] ?? null,
         'jsPhrasesDynamic' => $config['jsPhrasesDynamic'] ?? false,
+        'coreTables' => $config['coreTables'] ?? [],
     ];
 }
 
