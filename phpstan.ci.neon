@@ -1,0 +1,17 @@
+# YoureCom Standard: PHPStan in the GitHub workflow, the WoltLab Suite Core is checked out into ../wcf and the
+# required YoureCom packages next to the plugin (.github/scripts/checkout-dependencies.sh).
+includes:
+    - vendor/phpstan/phpstan-strict-rules/rules.neon
+    - vendor/phpstan/phpstan-deprecation-rules/rules.neon
+    - phpstan.common.neon
+
+parameters:
+  tmpDir: var/phpstan
+
+  bootstrapFiles:
+    - '../wcf/constants.php'
+    - 'constants.php'
+
+  scanDirectories:
+    - ../wcf/wcfsetup/install/files/lib/
+

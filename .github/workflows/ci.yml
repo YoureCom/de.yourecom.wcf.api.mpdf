@@ -1,0 +1,180 @@
+# YoureCom Standard: checks of every plugin. Managed by _dev/standard (apply.php), do not edit here.
+# One job instead of one per check: GitHub bills every job rounded up to whole minutes, nine small jobs cost nine minutes
+# even when each takes seconds. All steps run even if an earlier one fails (`!cancelled()`), the job is red if any is.
+# Locally `bash _dev/standard/check.sh <plugin>` runs the same checks and more (dev system, browser).
+name: CI
+
+on:
+  push:
+    branches: ['6.2']
+    paths-ignore: ['**.md', 'docs/**']
+  pull_request:
+    paths-ignore: ['**.md', 'docs/**']
+  # the release workflow runs the same checks first, with PHP 8.4 in addition
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Checks
+    runs-on: ubuntu-latest
+    # Dependabot pull requests only signal new versions, the update itself happens once in _dev/standard
+    if: github.actor != 'dependabot[bot]'
+    defaults:
+      run:
+        working-directory: plugin
+    steps:
+      # the whole history: check-deletes.php compares with the released versions
+      - uses: actions/checkout@v7
+        with:
+          path: plugin
+          fetch-depth: 0
+
+      # the WoltLab Suite Core: the classes for PHPStan and the XSDs of the PIP files
+      - uses: actions/checkout@v7
+        with:
+          repository: WoltLab/WCF
+          ref: '6.2'
+          path: wcf
+
+      # required YoureCom packages (package.xml) next to the plugin, as in the local plugins folder; needs the
+      # organization secret YOURECOM_DEPENDENCY_TOKEN (read access to the private repositories)
+      - name: Required YoureCom packages
+        working-directory: .
+        env:
+          TOKEN: ${{ secrets.YOURECOM_DEPENDENCY_TOKEN }}
+        run: bash plugin/.github/scripts/checkout-dependencies.sh plugin
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          tools: composer
+          coverage: pcov
+          extensions: dom, libxml
+
+      # a plugin without PHP classes (files*/lib) has nothing for PHPStan and PHPUnit, like in check.sh
+      - id: detect
+        name: Detect PHP classes and TypeScript
+        run: |
+          echo "php=$(find files*/lib -name '*.php' -print -quit 2>/dev/null | grep -q . && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "typescript=$([ -f tsconfig.json ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: PHP syntax
+        run: find . -path ./vendor -prune -o -path ./node_modules -prune -o -name '*.php' -print0 | xargs -0 -n1 -P4 php -l > /dev/null
+
+      # the versions of PHPStan, PHPUnit and PHP-CS-Fixer are pinned in composer.json, locally and in the CI the same
+      - run: composer install --no-interaction --no-progress
+
+      - name: Code style (PHP-CS-Fixer, the rules of WoltLab Suite)
+        if: ${{ !cancelled() }}
+        run: vendor/bin/php-cs-fixer check --diff
+
+      - name: PHPStan
+        if: ${{ !cancelled() && steps.detect.outputs.php == 'true' }}
+        run: vendor/bin/phpstan analyse -c phpstan.ci.neon --memory-limit=2G --no-progress
+
+      - name: PHPUnit with coverage floor
+        if: ${{ !cancelled() && steps.detect.outputs.php == 'true' }}
+        run: |
+          vendor/bin/phpunit --testsuite unit --coverage-clover=var/coverage.xml
+          php tests/lint/check-coverage.php var/coverage.xml
+
+      - name: PIP files match the XSDs of WoltLab Suite 6.2
+        if: ${{ !cancelled() }}
+        run: php tests/lint/check-xsd.php
+        env:
+          WCF_XSD: ${{ github.workspace }}/wcf/XSD
+
+      - name: package.xml and constants.php
+        if: ${{ !cancelled() }}
+        run: php tests/lint/check-package.php
+
+      - name: Removed files and language items of released versions are deleted on update
+        if: ${{ !cancelled() }}
+        run: php tests/lint/check-deletes.php
+
+      - name: Language files
+        if: ${{ !cancelled() }}
+        run: php tests/lint/check-language.php
+
+      - name: PHP rules (debug output, WCF_N, json_decode, trim, docblocks)
+        if: ${{ !cancelled() }}
+        run: php tests/lint/check-php.php
+
+      - name: Phrases of the TypeScript modules exist and are preloaded
+        if: ${{ !cancelled() }}
+        run: php tests/lint/check-js-phrases.php
+
+      - name: RPC endpoints are registered
+        if: ${{ !cancelled() }}
+        run: php tests/lint/check-endpoints.php
+
+      - name: Templates and TypeScript (no jQuery, no legacy AJAX, strict comparisons, labels, ids, buttons)
+        if: ${{ !cancelled() }}
+        run: php tests/lint/check-templates.php
+
+      - name: Architecture (grid/list views, interactions, RPC endpoints instead of legacy lists and AJAX actions)
+        if: ${{ !cancelled() }}
+        run: php tests/lint/check-architecture.php
+
+      - uses: actions/setup-node@v7
+        if: ${{ !cancelled() && steps.detect.outputs.typescript == 'true' }}
+        with:
+          node-version: 22
+
+      # the WoltLab packages come from GitHub, the lock file names them by SSH
+      - name: npm install
+        if: ${{ !cancelled() && steps.detect.outputs.typescript == 'true' }}
+        run: |
+          git config --global url."https://github.com/".insteadOf ssh://git@github.com/
+          if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
+
+      - name: TypeScript (strict)
+        if: ${{ !cancelled() && steps.detect.outputs.typescript == 'true' }}
+        run: npx tsc -p tsconfig.ci.json
+
+      - name: ESLint
+        if: ${{ !cancelled() && steps.detect.outputs.typescript == 'true' }}
+        run: npm run lint
+
+      - name: Prettier
+        if: ${{ !cancelled() && steps.detect.outputs.typescript == 'true' }}
+        run: npm run format:check
+
+      - name: The committed JavaScript is the build of ts/
+        if: ${{ !cancelled() && steps.detect.outputs.typescript == 'true' }}
+        run: node tests/lint/check-js-build.mjs
+
+      - name: Vitest with coverage
+        if: ${{ !cancelled() && steps.detect.outputs.typescript == 'true' }}
+        run: npm run test:coverage
+
+  # the newest PHP only before a release (tags), not on every push
+  php84:
+    name: PHP 8.4 (release)
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          tools: composer
+
+      - name: PHP syntax
+        run: find . -path ./vendor -prune -o -path ./node_modules -prune -o -name '*.php' -print0 | xargs -0 -n1 -P4 php -l > /dev/null
+
+      - run: composer install --no-interaction --no-progress
+
+      - name: PHPUnit
+        run: |
+          if find files*/lib -name '*.php' -print -quit 2>/dev/null | grep -q .; then
+            vendor/bin/phpunit --testsuite unit
+          fi

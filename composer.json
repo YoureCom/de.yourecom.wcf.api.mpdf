@@ -1,0 +1,24 @@
+{
+    "name": "yourecom/de.yourecom.wcf.api.mpdf",
+    "description": "Development tools of de.yourecom.wcf.api.mpdf (not part of the package). YoureCom Standard: same versions as _dev/tools.",
+    "type": "project",
+    "require": {
+        "php": ">=8.2"
+    },
+    "require-dev": {
+        "friendsofphp/php-cs-fixer": "3.95.27",
+        "phpstan/phpstan": "2.2.16",
+        "phpstan/phpstan-deprecation-rules": "2.0.5",
+        "phpstan/phpstan-strict-rules": "2.0.12",
+        "phpunit/phpunit": "^11"
+    },
+    "scripts": {
+        "test": "phpunit --testsuite unit",
+        "test-integration": "phpunit -c phpunit.integration.xml",
+        "cs": "php-cs-fixer check --diff",
+        "cs-fix": "php-cs-fixer fix"
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

@@ -1,0 +1,7 @@
+files/
+files_wcf/
+node_modules/
+vendor/
+var/
+snapshots/
+tests/ts/mocks/

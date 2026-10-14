@@ -1,0 +1,15 @@
+# YoureCom Standard: managed by _dev/standard (apply.php), do not edit here.
+# Rules of the standard on top of level 9 and the strict rules, included by phpstan.common.neon.
+#  - strict comparisons: no empty() (compare with === [], === '', === 0 or === null), no == or != (strict rules)
+#  - every method has #[\Override] or a docblock that explains it (tests/phpstan/OverrideOrDocblockRule.php)
+includes:
+    - tests/phpstan/rules.php
+
+parameters:
+  strictRules:
+    disallowedEmpty: true
+    disallowedLooseComparison: true
+
+  excludePaths:
+    analyse:
+      - tests/phpstan/*

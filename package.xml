@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<package name="de.yourecom.wcf.api.mpdf" xmlns="http://www.woltlab.com" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.woltlab.com http://www.woltlab.com/XSD/5.4/package.xsd">
+<package name="de.yourecom.wcf.api.mpdf" xmlns="http://www.woltlab.com" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.woltlab.com https://www.woltlab.com/XSD/6.0/package.xsd">
 	<packageinformation>
 		<packagename><![CDATA[mPDF]]></packagename>
 		<packagename languagecode="de"><![CDATA[mPDF]]></packagename>
 		<packagedescription><![CDATA[Bundles the mPDF library (HTML to PDF converter) for use by other packages. Developed by Matěj Humpál and contributors: https://github.com/mpdf/mpdf]]></packagedescription>
 		<packagedescription languagecode="de"><![CDATA[Stellt die mPDF-Bibliothek (HTML-zu-PDF-Konverter) für andere Pakete bereit. Entwickelt von Matěj Humpál und Mitwirkenden: https://github.com/mpdf/mpdf]]></packagedescription>
 		<isapplication>0</isapplication>
-		<version>8.3.2 Beta 1</version>
-		<date>2026-10-12</date>
+		<version>8.3.2 Beta 2</version>
+		<date>2026-10-13</date>
 		<packageurl><![CDATA[https://yourecom.de]]></packageurl>
 	</packageinformation>
 

@@ -1,0 +1,17 @@
+# YoureCom Standard: local PHPStan run against C:/laragon/www/wsc6.2 with the shared tools of _dev/tools.
+#   php -d memory_limit=4G ../_dev/tools/vendor/bin/phpstan analyse -c phpstan.neon.dist --no-progress
+includes:
+    - ../_dev/tools/vendor/phpstan/phpstan-strict-rules/rules.neon
+    - ../_dev/tools/vendor/phpstan/phpstan-deprecation-rules/rules.neon
+    - phpstan.common.neon
+
+parameters:
+  tmpDir: ../var/phpstan/de.yourecom.wcf.api.mpdf
+
+  bootstrapFiles:
+    - 'C:/laragon/www/wsc6.2/constants.php'
+    - 'constants.php'
+
+  scanDirectories:
+    - C:/laragon/www/wsc6.2/lib/
+

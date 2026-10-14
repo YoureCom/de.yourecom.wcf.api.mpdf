@@ -1,0 +1,54 @@
+# YoureCom Standard: managed by _dev/standard (apply.php), do not edit here.
+name: Release
+
+# Builds the package for a tag like v6.2.14 or v6.2.14-beta.2 and attaches it to a GitHub release.
+# Nothing is deployed: uploading to yourecom.de stays a manual step that needs Marcel's approval
+# (before that: bash ../_dev/release-check.sh <plugin>, it needs SSH access to the live server).
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    name: Build and publish
+    needs: checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: The tag matches the version in package.xml
+        id: version
+        run: |
+          version="$(sed -n 's:.*<version>\(.*\)</version>.*:\1:p' package.xml | head -1)"
+          # "6.2.14 Beta 2" and "v6.2.14-beta.2" both become "6.2.14.beta.2"
+          normalize() { echo "$1" | tr '[:upper:]' '[:lower:]' | sed -e 's/^v//' -e 's/[ -]/./g'; }
+          if [ "$(normalize "$version")" != "$(normalize "$GITHUB_REF_NAME")" ]; then
+            echo "::error::The tag $GITHUB_REF_NAME does not match the version '$version' in package.xml"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if echo "$version" | grep -qiE 'alpha|beta|rc'; then
+            echo "prerelease=--prerelease" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build the package
+        id: build
+        run: echo "archive=$(bash .github/scripts/build-package.sh "$RUNNER_TEMP/package")" >> "$GITHUB_OUTPUT"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "${{ steps.build.outputs.archive }}" \
+            --title "${{ steps.version.outputs.version }}" \
+            --generate-notes \
+            ${{ steps.version.outputs.prerelease }}

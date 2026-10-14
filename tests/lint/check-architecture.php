@@ -1,0 +1,204 @@
+<?php
+
+/**
+ * YoureCom Standard: architecture rules (close to the core of WoltLab Suite 6.2). Managed by _dev/standard (apply.php),
+ * do not edit here.
+ *  - list-page:     lists are AbstractGridViewPage (ACP) or AbstractListViewPage, not SortablePage/MultipleLinkPage
+ *  - object-action: no `{objectAction}`/`jsObjectActionContainer` in templates, actions are interactions with RPC endpoints
+ *  - clipboard:     no clipboard actions, mass actions are bulk interactions of the grid/list view
+ *  - toggle-action: no IToggleAction/TDatabaseObjectToggle, enabling and disabling are RPC endpoints with a command
+ *  - ajax-method:   no custom `validate*()` AJAX entry points in AbstractDatabaseObjectAction classes (RPC endpoints)
+ *  - endpoint-validate-action: RPC endpoints never call validateAction() (it rejects every name of `$requireACP`)
+ *  - require-acp:   create/update/delete cannot be called through AJAX from the frontend: in `$requireACP` unless the
+ *                   action denies them anyway (no `$permissions*` and no own `validate*()`)
+ *  - acp-menu:      ACP menu items are registered with the ItemCollecting event (listener in the bootstrap), acpMenu.xml
+ *                   only holds <delete> entries for removing old items
+ *  - cache-builder: caches are eager (AbstractEagerCache) or tolerant (AbstractTolerantCache) caches of 6.2, not
+ *                   AbstractCacheBuilder/AbstractLegacyCacheBuilder
+ *  - legacy-form:   forms use the form builder (AbstractFormBuilderForm), not AbstractForm/AbstractAcpForm
+ *  - listener-instanceof: event listener classes check `$eventObj` with instanceof
+ *  - legacy-listener:     eventListener.xml imports legacy listeners, use PSR-14 events and listeners registered in the
+ *                         bootstrap (keep only <delete>)
+ *  - legacy-ajax:   TypeScript, JavaScript and templates call DatabaseObjectActions (`WoltLabSuite/Core/Ajax`,
+ *                   `dboAction`, `className: "…\data\…Action"`, `WCF.Action.*`, `ajax-proxy`), use RPC endpoints
+ *
+ * Known findings that cannot be changed yet are listed in tests/lint/config.php (`architectureKnown`: relative file
+ * => list of rules); entries that no longer match make the check fail, so the list can only shrink.
+ *
+ * Usage: php tests/lint/check-architecture.php
+ */
+
+namespace yourecom\standard;
+
+require __DIR__ . '/lib.php';
+
+const LEGACY_LIST_PAGES = 'SortablePage|MultipleLinkPage|AbstractListPage';
+
+/** calls of DatabaseObjectActions from TypeScript, JavaScript and templates (the AJAX API before RPC endpoints) */
+const LEGACY_AJAX = [
+    '~[\x22\x27]WoltLabSuite/Core/Ajax(?:/DboAction)?[\x22\x27]~' => 'WoltLabSuite/Core/Ajax',
+    '~\b(?:define|require)\s*\(\s*\[[^\]]*[\x22\x27]Ajax[\x22\x27]~' => 'AMD module Ajax',
+    '~\bdboAction\b~' => 'dboAction',
+    '~[\x22\x27][a-z]\w*(?:\x5C{1,2}\w+)*\x5C{1,2}data\x5C{1,2}(?:\w+\x5C{1,2})*\w+Action[\x22\x27]~' => 'class name of a DatabaseObjectAction',
+    '~\bWCF\.Action\.\w+~' => 'WCF.Action',
+    '~ajax-proxy~' => 'ajax-proxy',
+];
+
+/** @var array<string, list<string>> $findings relative file => rules */
+$findings = [];
+/** @var array<string, string> $messages "file|rule" => message */
+$messages = [];
+
+$report = static function (string $file, string $rule, string $message) use (&$findings, &$messages): void {
+    $findings[$file][] = $rule;
+    $messages["{$file}|{$rule}"] ??= "{$file}: [{$rule}] {$message}";
+};
+
+foreach (files(['files', 'files_wcf'], ['.php']) as $relative => $path) {
+    $source = (string)\file_get_contents($path);
+
+    if (\preg_match('~\bextends\s+\\\\?(?:wcf\\\\page\\\\)?(' . LEGACY_LIST_PAGES . ')\b~', $source, $match)) {
+        $report($relative, 'list-page', "extends {$match[1]}, use AbstractGridViewPage (ACP) or AbstractListViewPage with a grid/list view");
+    }
+
+    if (\preg_match('~\bextends\s+\\\\?(?:wcf\\\\system\\\\clipboard\\\\action\\\\)?AbstractClipboardAction\b~', $source)) {
+        $report($relative, 'clipboard', 'clipboard action, use bulk interactions of the grid/list view');
+    }
+
+    if (\preg_match('~\bextends\s+\\\\?(?:wcf\\\\system\\\\cache\\\\builder\\\\)?(?:AbstractCacheBuilder|AbstractLegacyCacheBuilder|AbstractSortedUserCacheBuilder)\b~', $source)) {
+        $report($relative, 'cache-builder', 'cache builder, use an eager (AbstractEagerCache) or tolerant (AbstractTolerantCache) cache');
+    }
+
+    if (\preg_match('~\bextends\s+\\\\?(?:wcf\\\\(?:acp\\\\)?form\\\\)?(AbstractForm|AbstractAcpForm|AbstractCaptchaForm)\b~', $source, $match)) {
+        $report($relative, 'legacy-form', "extends {$match[1]}, use the form builder (AbstractFormBuilderForm)");
+    }
+
+    if (
+        \preg_match('~\bimplements\b[^{]*\bIParameterizedEventListener\b|\bextends\s+\\\\?(?:wcf\\\\system\\\\event\\\\listener\\\\)?AbstractEventListener\b~', $source)
+        && !\str_contains($source, 'instanceof')
+    ) {
+        $report($relative, 'listener-instanceof', 'event listener without an instanceof check of $eventObj');
+    }
+
+    // an RPC request is never an ACP request: validateAction() rejects every name in $requireACP there
+    if (\str_contains($relative, '/system/endpoint/') && \preg_match('~->validateAction\(\)~', $source)) {
+        $report($relative, 'endpoint-validate-action', 'RPC endpoint calls validateAction(), call the check directly (e.g. validateDelete()) or check in the endpoint/command');
+    }
+
+    if (!\preg_match('~\bextends\s+\\\\?(?:wcf\\\\data\\\\)?AbstractDatabaseObjectAction\b~', $source)) {
+        continue;
+    }
+
+    if (\preg_match('~\bIToggleAction\b|\bTDatabaseObjectToggle\b~', $source)) {
+        $report($relative, 'toggle-action', 'IToggleAction/TDatabaseObjectToggle, use enable/disable RPC endpoints with a command');
+    }
+
+    \preg_match_all('~public\s+function\s+(validate\w+)\s*\(~', $source, $matches);
+    $custom = \array_diff($matches[1], ['validateCreate', 'validateUpdate', 'validateDelete']);
+    if ($custom !== []) {
+        $report($relative, 'ajax-method', 'AJAX entry points ' . \implode(', ', $custom) . '(), use RPC endpoints');
+    }
+
+    // AJAX (AJAXProxyAction -> validateAction()) reaches create/update/delete from the frontend only if the name is not
+    // in $requireACP and the action can pass validate*(): with $permissions* set or an own validate*() method
+    // (the core's validate*() deny everything without $permissions*); RPC endpoints never go through this check
+    $requireAcp = [];
+    if (\preg_match('~\$requireACP\s*=\s*\[([^\]]*)\]~', $source, $match)) {
+        \preg_match_all('~[\'"](\w+)[\'"]~', $match[1], $names);
+        $requireAcp = $names[1];
+    }
+    $reachable = [];
+    foreach (['create', 'update', 'delete'] as $name) {
+        if (\in_array($name, $requireAcp, true)) {
+            continue;
+        }
+        $permissions = '~\$permissions' . \ucfirst($name) . '\s*=\s*\[\s*[\'"]~';
+        $validator = '~function\s+validate' . \ucfirst($name) . '\s*\(~';
+        if (\preg_match($permissions, $source) || \preg_match($validator, $source)) {
+            $reachable[] = $name;
+        }
+    }
+    if ($reachable !== []) {
+        $report($relative, 'require-acp', 'the frontend can call ' . \implode(', ', $reachable) . ' through AJAX, add them to $requireACP (RPC endpoints call validate' . \ucfirst($reachable[0]) . '() directly)');
+    }
+}
+
+foreach (files(templateDirectories(), ['.tpl']) as $relative => $path) {
+    $source = (string)\file_get_contents($path);
+
+    if (\preg_match('~\{objectAction\b|jsObjectActionContainer~', $source)) {
+        $report($relative, 'object-action', '{objectAction}/jsObjectActionContainer, use interactions (quick interactions for toggles)');
+    }
+
+    if (\preg_match('~jsClipboard(?:Container|Item|Editor|MarkAll)|Controller/Clipboard~', $source)) {
+        $report($relative, 'clipboard', 'clipboard markup, use bulk interactions of the grid/list view');
+    }
+}
+
+$legacyAjax = static function (string $relative, string $source) use ($report): void {
+    $found = [];
+    foreach (LEGACY_AJAX as $pattern => $label) {
+        if (\preg_match($pattern, $source)) {
+            $found[] = $label;
+        }
+    }
+    if ($found !== []) {
+        $report($relative, 'legacy-ajax', 'legacy AJAX (' . \implode(', ', $found) . '), use RPC endpoints');
+    }
+};
+
+foreach (files(['ts'], ['.ts']) as $relative => $path) {
+    if (!\str_ends_with($relative, '.test.ts') && !\str_ends_with($relative, '.d.ts')) {
+        $legacyAjax($relative, (string)\file_get_contents($path));
+    }
+}
+
+// hand-written JavaScript; the committed build of ts/ is checked through its sources
+$jsBuildDir = config()['jsBuildDir'];
+foreach (files(['files', 'files_wcf'], ['.js']) as $relative => $path) {
+    if (\str_ends_with($relative, '.min.js') || ($jsBuildDir !== null && \str_starts_with($relative, \rtrim($jsBuildDir, '/') . '/'))) {
+        continue;
+    }
+    $legacyAjax($relative, (string)\file_get_contents($path));
+}
+
+// templates with {objectAction}/jsObjectActionContainer are already reported as object-action
+foreach (files(templateDirectories(), ['.tpl']) as $relative => $path) {
+    if (!\in_array('object-action', $findings[$relative] ?? [], true)) {
+        $legacyAjax($relative, (string)\file_get_contents($path));
+    }
+}
+
+$clipboardXml = ROOT . '/clipboardAction.xml';
+if (\is_file($clipboardXml) && \str_contains((string)\file_get_contents($clipboardXml), '<import>')) {
+    $report('clipboardAction.xml', 'clipboard', 'installs clipboard actions, use bulk interactions (keep only <delete>)');
+}
+
+$eventListenerXml = ROOT . '/eventListener.xml';
+if (\is_file($eventListenerXml) && \str_contains((string)\file_get_contents($eventListenerXml), '<import>')) {
+    $report('eventListener.xml', 'legacy-listener', 'imports event listeners, use PSR-14 events and listeners registered in the bootstrap (keep only <delete>)');
+}
+
+$acpMenuXml = ROOT . '/acpMenu.xml';
+if (\is_file($acpMenuXml) && \str_contains((string)\file_get_contents($acpMenuXml), '<import>')) {
+    $report('acpMenu.xml', 'acp-menu', 'imports ACP menu items, register them with the ItemCollecting event (keep only <delete>)');
+}
+
+$known = config()['architectureKnown'];
+$errors = [];
+foreach ($findings as $file => $rules) {
+    foreach (\array_unique($rules) as $rule) {
+        if (!\in_array($rule, $known[$file] ?? [], true)) {
+            $errors[] = $messages["{$file}|{$rule}"];
+        }
+    }
+}
+foreach ($known as $file => $rules) {
+    foreach ($rules as $rule) {
+        if (!\in_array($rule, $findings[$file] ?? [], true)) {
+            $errors[] = "tests/lint/config.php: architectureKnown {$file} [{$rule}] no longer applies, remove it";
+        }
+    }
+}
+
+finish($errors, \count($findings) === 0 ? 'no legacy patterns' : \count($known) . ' known');

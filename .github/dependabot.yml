@@ -1,0 +1,26 @@
+# YoureCom Standard: managed by _dev/standard (apply.php), do not edit here.
+# Major updates of the npm tools are skipped here, they are raised once for all plugins in _dev/standard
+# (initial/package.json) and the shared ../node_modules. Updates of the GitHub Actions belong into
+# _dev/standard/managed/.github/workflows as well, a pull request here shows that a new version exists.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      dev-tools:
+        patterns:
+          - "*"

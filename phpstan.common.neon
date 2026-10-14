@@ -1,0 +1,36 @@
+# YoureCom Standard: shared PHPStan settings of the plugin (level 9 at least, strict and deprecation rules).
+# Local: phpstan.neon.dist, CI: phpstan.ci.neon.
+includes:
+    - phpstanWoltLab.neon
+    # rules of the standard: strict comparisons (no empty(), no ==), #[\Override] or a docblock on every method
+    - phpstan.standard.neon
+
+parameters:
+  level: 9
+
+  # strict rules, except the ones that ask for a different style than the WoltLab code base
+  strictRules:
+    booleansInConditions: false
+    disallowedShortTernary: false
+    # `@property-read int` on a database object names the target type, the database delivers strings
+    uselessCast: false
+
+  paths:
+    - files
+    - tests
+
+  reportUnmatchedIgnoredErrors: true
+
+  excludePaths:
+    analyse:
+      - vendor/*
+      - "**/vendor/*"
+      - node_modules/*
+      - var/*
+      - tests/e2e/*
+      # tooling of the standard, not part of the package
+      - tests/lint/*
+      - .vscode (?)
+
+  dynamicConstantNames:
+    - TIME_NOW
