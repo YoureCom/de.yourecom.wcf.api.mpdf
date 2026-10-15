@@ -1,9 +1,10 @@
 // YoureCom Standard: the committed JavaScript (`jsBuildDir` of tests/lint/config.php, e.g. files/js) is exactly what the
 // TypeScript sources produce. Managed by _dev/standard (apply.php), do not edit here.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
@@ -31,6 +32,34 @@ if (!buildDir) {
 }
 
 const tsc = [join(root, "node_modules/typescript/bin/tsc"), join(root, "../node_modules/typescript/bin/tsc")].find(existsSync);
+// tsconfig.ci.json resolves the types from the plugin's node_modules (CI), tsconfig.json from ../node_modules (local)
+const project = existsSync(join(root, "node_modules/@woltlab/d.ts")) ? "tsconfig.ci.json" : "tsconfig.json";
+
+// The check compiles everything, which takes seconds (it runs on every package build and every check.sh). When the sources, the
+// committed build, the configuration, the compiler and the types are byte for byte those of the last successful run, the result
+// is the same, so that run is not repeated. The mark lives in var/ (not in git): CI always compiles.
+const markFile = join(root, "var/js-build-ok.txt");
+const fingerprint = (() => {
+  const hash = createHash("sha256");
+  const add = (file) => {
+    if (!existsSync(file)) return;
+    hash.update(relative(root, file).replaceAll("\\", "/") + "\0");
+    hash.update(readFileSync(file));
+    hash.update("\0");
+  };
+  for (const dir of ["ts", buildDir]) if (existsSync(join(root, dir))) files(join(root, dir)).sort().forEach(add);
+  for (const file of ["tsconfig.json", "tsconfig.ci.json", "tests/lint/config.php"]) add(join(root, file));
+  add(fileURLToPath(import.meta.url));
+  if (tsc) add(join(tsc, "../../package.json"));
+  // the types count too: emitDecoratorMetadata writes them into the output, and a type error fails the check
+  for (const types of ["node_modules/@woltlab/d.ts/package.json", "../node_modules/@woltlab/d.ts/package.json"]) add(join(root, types));
+  return hash.digest("hex");
+})();
+if (existsSync(markFile) && readFileSync(markFile, "utf8").trim() === fingerprint) {
+  console.log("OK (unchanged since the last successful check)");
+  process.exit(0);
+}
+
 const out = mkdtempSync(join(tmpdir(), "yourecom-js-"));
 
 function read(dir) {
@@ -38,8 +67,6 @@ function read(dir) {
 }
 
 try {
-  // tsconfig.ci.json resolves the types from the plugin's node_modules (CI), tsconfig.json from ../node_modules (local)
-  const project = existsSync(join(root, "node_modules/@woltlab/d.ts")) ? "tsconfig.ci.json" : "tsconfig.json";
   execFileSync(process.execPath, [tsc, "-p", project, "--noEmit", "false", "--outDir", out], { cwd: root, stdio: "inherit" });
 
   const fresh = read(out);
@@ -59,6 +86,12 @@ try {
     process.exit(1);
   }
   console.log(`OK (${fresh.size} files)`);
+  try {
+    mkdirSync(dirname(markFile), { recursive: true });
+    writeFileSync(markFile, fingerprint + "\n");
+  } catch {
+    // without the mark the next run just compiles again
+  }
 } finally {
   rmSync(out, { recursive: true, force: true });
 }

@@ -10,6 +10,11 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUT="${1:-$ROOT/var/package}"
+# absolute, because pack() below changes the folder
+case "$OUT" in
+  /* | [A-Za-z]:*) ;;
+  *) OUT="$PWD/$OUT" ;;
+esac
 STAGE="$OUT/stage"
 
 PACKAGE="$(sed -n 's:.*<package name="\([^"]*\)".*:\1:p' "$ROOT/package.xml" | head -1)"
@@ -28,20 +33,26 @@ mkdir -p "$STAGE"
 # the archives of the file and template PIPs, named as in package.xml (the default names when no name is given)
 pack() { # pack <source dir> <archive>
   [[ -d "$ROOT/$1" ]] || return 0
-  (cd "$ROOT/$1" && tar --format=ustar -cf "$STAGE/$2" --exclude='.DS_Store' --exclude='*.orig' --exclude='*.bak' -- *)
+  # cd and back instead of a subshell: a subshell is one more process start (set -e ends the script when tar fails)
+  cd "$ROOT/$1"
+  tar --format=ustar -cf "$STAGE/$2" --exclude='.DS_Store' --exclude='*.orig' --exclude='*.bak' -- *
+  cd "$ROOT"
 }
 pack files files.tar
 pack files_wcf files_wcf.tar
 pack templates templates.tar
 pack acptemplates acptemplates.tar
 
-# package.xml, the PIP files and the language files; development files stay outside
+# package.xml, the PIP files and the language files; development files stay outside. One cp for all of them and no
+# basename per file: on Windows every process start costs about 100 ms (a package with 24 PIP files spent 4 s here)
+XML_FILES=()
 for FILE in "$ROOT"/*.xml; do
-  case "$(basename "$FILE")" in
+  case "${FILE##*/}" in
     phpunit*.xml) ;;
-    *) cp "$FILE" "$STAGE/" ;;
+    *) XML_FILES+=("$FILE") ;;
   esac
 done
+cp -- "${XML_FILES[@]}" "$STAGE/"
 # packages without phrases (e.g. branding free) have no language folder
 if [[ -d "$ROOT/language" ]]; then
   cp -r "$ROOT/language" "$STAGE/language"
@@ -51,7 +62,7 @@ if [[ -d "$ROOT/requirements" ]]; then
   cp -r "$ROOT/requirements" "$STAGE/requirements"
 fi
 
-ARCHIVE="$OUT/${PACKAGE}_$(echo "$VERSION" | tr ' ' '_').tar.gz"
+ARCHIVE="$OUT/${PACKAGE}_${VERSION// /_}.tar.gz"
 rm -f "$ARCHIVE"
 (cd "$STAGE" && tar --format=ustar -czf "$ARCHIVE" -- *)
 rm -rf "$STAGE"
@@ -60,7 +71,7 @@ rm -rf "$STAGE"
 # the default files of instructions without a name (file -> files.tar, language -> language/*.xml, <pip> -> <pip>.xml)
 # and no pax headers (WoltLab reads ustar)
 CONTENTS="$(tar -tzf "$ARCHIVE")"
-if grep -q 'PaxHeader' <<< "$CONTENTS"; then
+if [[ "$CONTENTS" == *PaxHeader* ]]; then
   echo "the archive contains pax headers" >&2
   exit 1
 fi
