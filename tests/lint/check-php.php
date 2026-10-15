@@ -8,6 +8,8 @@
  *  - `StringUtil::trim()` instead of the native `trim()` (it also removes Unicode whitespace); `trim()` with an own
  *    character list stays allowed
  *  - classes, interfaces, traits and enums have a docblock with a description, `@author` and `@license`
+ *  - notifications (`files/lib/system/user/notification/`) link to an ACP controller of the package only with
+ *    `'isACP' => true`; without it LinkHandler takes the frontend in the frontend and in cronjobs (the link leads nowhere)
  *
  * Methods (`#[\Override]` or a docblock) and strict comparisons are checked by PHPStan (phpstan.standard.neon).
  *
@@ -20,6 +22,7 @@ require __DIR__ . '/lib.php';
 
 $errors = [];
 $count = 0;
+$acpControllers = acpControllers();
 
 foreach (files(['files', 'files_wcf'], ['.php']) as $relative => $path) {
     $source = (string)\file_get_contents($path);
@@ -34,6 +37,12 @@ foreach (files(['files', 'files_wcf'], ['.php']) as $relative => $path) {
             $errors[] = "{$relative}:{$call['line']}: debug output {$call['name']}()";
         } elseif (!\str_contains($call['arguments'], 'JSON_THROW_ON_ERROR')) {
             $errors[] = "{$relative}:{$call['line']}: json_decode() without JSON_THROW_ON_ERROR (or use JSON::decode())";
+        }
+    }
+
+    if (\str_starts_with($relative, 'files/lib/system/user/notification/')) {
+        foreach (acpLinksWithoutIsAcp($source, $acpControllers) as [$line, $controller]) {
+            $errors[] = "{$relative}:{$line}: getLink('{$controller}') links to an ACP controller without 'isACP' => true (e-mails also 'isEmail' => true)";
         }
     }
 
@@ -84,6 +93,78 @@ foreach (files(['files', 'files_wcf'], ['.php']) as $relative => $path) {
 }
 
 finish($errors, "{$count} files");
+
+/**
+ * Returns the controller names of the ACP pages, forms and actions of the package (`FooForm` => `Foo`).
+ *
+ * @return list<string>
+ */
+function acpControllers(): array
+{
+    $controllers = [];
+    foreach (files(['files/lib/acp/page', 'files/lib/acp/form', 'files/lib/acp/action'], ['.class.php']) as $relative => $path) {
+        $controllers[] = (string)\preg_replace('~(Page|Form|Action)$~', '', \basename($relative, '.class.php'));
+    }
+
+    return \array_values(\array_unique($controllers));
+}
+
+/**
+ * Returns the `->getLink()` calls on an ACP controller of the package whose arguments do not set `isACP` to true.
+ *
+ * @param list<string> $acpControllers
+ * @return list<array{0: int, 1: string}> line and controller
+ */
+function acpLinksWithoutIsAcp(string $source, array $acpControllers): array
+{
+    $tokens = \token_get_all($source);
+    $found = [];
+    foreach ($tokens as $index => $token) {
+        if (!\is_array($token) || $token[0] !== \T_STRING || \strtolower($token[1]) !== 'getlink') {
+            continue;
+        }
+        $previous = nextToken($tokens, $index, -1);
+        $next = nextToken($tokens, $index, 1);
+        if ($previous === null || !\is_array($tokens[$previous]) || !\in_array($tokens[$previous][0], [\T_OBJECT_OPERATOR, \T_NULLSAFE_OBJECT_OPERATOR], true)) {
+            continue;
+        }
+        if ($next === null || $tokens[$next] !== '(') {
+            continue;
+        }
+        $first = nextToken($tokens, $next, 1);
+        if ($first === null || !\is_array($tokens[$first]) || $tokens[$first][0] !== \T_CONSTANT_ENCAPSED_STRING) {
+            continue;
+        }
+        $controller = \substr($tokens[$first][1], 1, -1);
+        if (!\in_array($controller, $acpControllers, true)) {
+            continue;
+        }
+
+        // the source of the arguments up to the matching parenthesis, without whitespace and comments
+        $depth = 0;
+        $arguments = '';
+        for ($i = $next, $count = \count($tokens); $i < $count; $i++) {
+            if (\is_array($tokens[$i]) && \in_array($tokens[$i][0], [\T_WHITESPACE, \T_COMMENT, \T_DOC_COMMENT], true)) {
+                continue;
+            }
+            $text = \is_array($tokens[$i]) ? $tokens[$i][1] : $tokens[$i];
+            if ($text === '(' || $text === '[') {
+                $depth++;
+            } elseif ($text === ')' || $text === ']') {
+                $depth--;
+            }
+            $arguments .= $text;
+            if ($depth === 0) {
+                break;
+            }
+        }
+        if (!\preg_match('~[\'"]isACP[\'"]=>true~i', $arguments)) {
+            $found[] = [$token[2], $controller];
+        }
+    }
+
+    return $found;
+}
 
 /**
  * Returns the number of arguments of a call, given the source of its parenthesized argument list.
