@@ -7,6 +7,8 @@
  *  - `json_decode()` with `JSON_THROW_ON_ERROR` (or `JSON::decode()`), a broken document must not become null silently
  *  - `StringUtil::trim()` instead of the native `trim()` (it also removes Unicode whitespace); `trim()` with an own
  *    character list stays allowed
+ *  - `fputcsv()`, `fgetcsv()` and `str_getcsv()` pass the escape parameter; PHP 8.4 deprecates the default, WoltLab turns
+ *    the deprecation into an error and the CSV export breaks
  *  - classes, interfaces, traits and enums have a docblock with a description, `@author` and `@license`
  *  - notifications (`files/lib/system/user/notification/`) link to an ACP controller of the package only with
  *    `'isACP' => true`; without it LinkHandler takes the frontend in the frontend and in cronjobs (the link leads nowhere)
@@ -24,12 +26,19 @@ $errors = [];
 $count = 0;
 $acpControllers = acpControllers();
 
+/** position of the escape parameter (1-based) of the CSV functions */
+const CSV_ARGUMENTS = ['fputcsv' => 5, 'fgetcsv' => 5, 'str_getcsv' => 4];
+
 foreach (files(['files', 'files_wcf'], ['.php']) as $relative => $path) {
     $source = (string)\file_get_contents($path);
     $count++;
 
-    foreach (functionCalls($source, ['wcfdebug', 'var_dump', 'dump', 'dd', 'json_decode', 'trim']) as $call) {
-        if ($call['name'] === 'trim') {
+    foreach (functionCalls($source, ['wcfdebug', 'var_dump', 'dump', 'dd', 'json_decode', 'trim', ...\array_keys(CSV_ARGUMENTS)]) as $call) {
+        if (isset(CSV_ARGUMENTS[$call['name']])) {
+            if (!csvEscapeGiven($call['name'], $call['arguments'])) {
+                $errors[] = "{$relative}:{$call['line']}: {$call['name']}() without the escape parameter (PHP 8.4 deprecates the default, write '' for RFC 4180)";
+            }
+        } elseif ($call['name'] === 'trim') {
             if (argumentCount($call['arguments']) === 1) {
                 $errors[] = "{$relative}:{$call['line']}: native trim(), use StringUtil::trim()";
             }
@@ -164,6 +173,18 @@ function acpLinksWithoutIsAcp(string $source, array $acpControllers): array
     }
 
     return $found;
+}
+
+/**
+ * Returns true if a call of a CSV function passes the escape parameter, by position, by name or through unpacking.
+ */
+function csvEscapeGiven(string $name, string $arguments): bool
+{
+    if (\preg_match('~(?<![\w$])escape\s*:~', $arguments) === 1 || \str_contains($arguments, '...')) {
+        return true;
+    }
+
+    return argumentCount($arguments) >= CSV_ARGUMENTS[$name];
 }
 
 /**
