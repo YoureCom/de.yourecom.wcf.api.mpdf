@@ -6,6 +6,12 @@
  *  - German texts that address the reader have the informal and the formal variant
  *  - every statically used variable with one of the prefixes of tests/lint/config.php (`languagePrefixes`) exists
  *  - the texts use no `{@...}` output and compare strictly in `{if}`/`{elseif}` (like the templates)
+ *  - every item is filed under a category {lang}/getPhrase() can actually find at runtime: WCF's Language::get()
+ *    only ever tries the item's first 3 dot-segments, then (if that category has no such item) its first 2 — any
+ *    other category, or an item with fewer than 3 segments, silently always returns the raw key instead of the text.
+ *    Known gaps (items whose category cannot be changed, e.g. shared with a required package) are listed in
+ *    tests/lint/config.php (`languageCategoryKnown`: item name => the category it actually uses; the list can only
+ *    shrink)
  *  (whether the texts compile is checked against the dev system: check-devsystem.php)
  *
  * Usage: php tests/lint/check-language.php
@@ -37,6 +43,8 @@ foreach ($items as $item) {
     }
 }
 
+$categoryKnown = $config['languageCategoryKnown'] ?? [];
+$categoryKnownSeen = [];
 foreach (['de', 'en'] as $languageCode) {
     foreach (xml(ROOT . "/language/{$languageCode}.xml")?->query('//w:category/w:item') ?: [] as $item) {
         if (!$item instanceof \DOMElement) {
@@ -49,6 +57,27 @@ foreach (['de', 'en'] as $languageCode) {
         foreach (looseConditions($item->textContent) as [, $problem]) {
             $errors[] = "{$languageCode}.xml: {$name}: {$problem}";
         }
+
+        $category = $item->parentNode instanceof \DOMElement ? $item->parentNode->getAttribute('name') : '';
+        $parts = \explode('.', $name);
+        if (\count($parts) < 3) {
+            $errors[] = "{$languageCode}.xml: {$name} has fewer than 3 dot-separated segments, {lang}/getPhrase() can never resolve it (always returns the raw key)";
+            continue;
+        }
+        $expected = [$parts[0] . '.' . $parts[1], $parts[0] . '.' . $parts[1] . '.' . $parts[2]];
+        if (\in_array($category, $expected, true)) {
+            continue;
+        }
+        if (($categoryKnown[$name] ?? null) === $category) {
+            $categoryKnownSeen[$name] = true;
+            continue;
+        }
+        $errors[] = "{$languageCode}.xml: {$name} is filed under category \"{$category}\", but {lang}/getPhrase() only ever look in \"" . \implode('" or "', $expected) . "\" (always returns the raw key otherwise)";
+    }
+}
+foreach ($categoryKnown as $name => $category) {
+    if (!isset($categoryKnownSeen[$name])) {
+        $errors[] = "tests/lint/config.php: languageCategoryKnown {$name} no longer applies, remove it";
     }
 }
 
