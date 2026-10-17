@@ -93,6 +93,15 @@ foreach (files(templateDirectories(), ['.tpl']) as $relative => $path) {
     try {
         $compiler->compileString(\basename($path, '.tpl'), (string)\file_get_contents($path), [], true);
     } catch (\Throwable $exception) {
+        // the compiler of the frontend only knows frontend templates: an ACP template may include an ACP-only one
+        $isAcp = \str_starts_with($relative, 'acptemplates/') || \str_starts_with($relative, 'files/acp/templates/');
+        if (
+            $isAcp
+            && \preg_match("~^Unable to find template '([^']+)'$~", \trim($exception->getMessage()), $match) === 1
+            && (\is_file(ROOT . '/acptemplates/' . $match[1] . '.tpl') || \is_file(WCF_DIR . 'acp/templates/' . $match[1] . '.tpl'))
+        ) {
+            continue;
+        }
         $errors[] = "{$relative}: does not compile: " . \trim($exception->getMessage());
     }
 }
