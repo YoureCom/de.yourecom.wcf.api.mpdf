@@ -1,15 +1,27 @@
 #!/usr/bin/env bash
 # YoureCom Standard: managed by _dev/standard (apply.php), do not edit here.
-# Builds the installable package (WoltLab format) into the given directory, default: var/package.
+# Builds the installable package (WoltLab format) into the given directory.
 # Used by the release workflow and locally. Uploading stays a manual step that needs Marcel's approval.
 #
 # Usage: bash .github/scripts/build-package.sh [output dir]
-# Prints the path of the created archive. Locally the archive is also copied to C:\laragon\www\archive\<package>.tar.gz
-# (override the folder with ARCHIVE_DIR).
+# Prints the path of the created archive. Without an output dir the package goes to C:\laragon\www\archive\<package>.tar.gz
+# (override the folder with ARCHIVE_DIR) and nowhere else, so no copies pile up in the plugins; where that folder does not
+# exist (the CI runner), to var/package. With an output dir it stays there and is also copied to the archive folder.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-OUT="${1:-$ROOT/var/package}"
+ARCHIVE_DIR="${ARCHIVE_DIR:-/c/laragon/www/archive}"
+MOVE=0
+if [[ $# -gt 0 ]]; then
+  OUT="$1"
+elif [[ -d "$ARCHIVE_DIR" ]]; then
+  # built in a temporary folder and moved into the archive folder at the end; the folder goes on success and failure
+  OUT="$(mktemp -d)"
+  MOVE=1
+  trap 'rm -rf "$OUT"' EXIT
+else
+  OUT="$ROOT/var/package"
+fi
 # absolute, because pack() below changes the folder
 case "$OUT" in
   /* | [A-Za-z]:*) ;;
@@ -110,9 +122,13 @@ php -r '
   }
 ' -- "$ROOT/package.xml" "$CONTENTS" || exit 1
 
-# local builds: the finished package is also put into the archive folder as <package>.tar.gz, an existing file is
-# overwritten (the folder does not exist on the CI runner, there the step is skipped)
-ARCHIVE_DIR="${ARCHIVE_DIR:-/c/laragon/www/archive}"
+# local builds: the finished package goes into the archive folder as <package>.tar.gz, an existing file is overwritten
+# (the folder does not exist on the CI runner, there the step is skipped)
+if [[ "$MOVE" == 1 ]]; then
+  mv -f "$ARCHIVE" "$ARCHIVE_DIR/$PACKAGE.tar.gz"
+  echo "$ARCHIVE_DIR/$PACKAGE.tar.gz"
+  exit 0
+fi
 if [[ -d "$ARCHIVE_DIR" ]]; then
   cp -f "$ARCHIVE" "$ARCHIVE_DIR/$PACKAGE.tar.gz"
   echo "copied to $ARCHIVE_DIR/$PACKAGE.tar.gz" >&2
