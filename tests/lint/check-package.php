@@ -7,6 +7,10 @@
  *  - com.woltlab.wcf is excluded from the next minor version on (`<excludedpackage version="6.3.0 Alpha 1">` for a
  *    minversion of 6.2.x), the package is not installable on a version it was not tested with
  *  - the delete PIPs (fileDelete.xml, templateDelete.xml, acpTemplateDelete.xml) run in every update
+ *  - the bootstrap file is named exactly like the package, character by character: the core only loads
+ *    lib/bootstrap/<package>.php (RebuildBootstrapper), on a case-sensitive file system a different casing is never loaded
+ *  - fileDelete runs before the files of an update when it deletes an old casing of the bootstrap file: on a
+ *    case-insensitive file system the extracted file keeps the old name and would be deleted afterwards
  *  - constants.php matches option.xml (written by apply.php; `--fix` writes it here)
  *
  * Usage: php tests/lint/check-package.php [--fix]
@@ -62,6 +66,42 @@ foreach (['fileDelete', 'templateDelete', 'acpTemplateDelete'] as $pip) {
     foreach ($updates as $update) {
         if ($update instanceof \DOMElement && $package->query("w:instruction[@type=\"{$pip}\"]", $update)?->length === 0) {
             $errors[] = "package.xml: the update from {$update->getAttribute('fromversion')} has no <instruction type=\"{$pip}\" />, {$pip}.xml is not applied";
+        }
+    }
+}
+
+$packageName = packageName();
+foreach (\glob(ROOT . '/files*/lib/bootstrap/*.php') ?: [] as $file) {
+    if (\basename($file, '.php') !== $packageName) {
+        $relative = \substr($file, \strlen(ROOT) + 1);
+        $errors[] = "{$relative}: the core only loads lib/bootstrap/{$packageName}.php, name it exactly like the package";
+    }
+}
+
+// an old casing of the bootstrap file in fileDelete.xml is the same file on a case-insensitive file system
+$deletesOldCasing = false;
+foreach (xml(ROOT . '/fileDelete.xml')?->query('//w:file[@application="wcf"]') ?: [] as $node) {
+    $name = \basename(\trim($node->textContent), '.php');
+    if (\str_starts_with(\trim($node->textContent), 'lib/bootstrap/') && \strcasecmp($name, $packageName) === 0) {
+        $deletesOldCasing = true;
+    }
+}
+if ($deletesOldCasing) {
+    foreach ($updates as $update) {
+        if (!$update instanceof \DOMElement) {
+            continue;
+        }
+        foreach ($package->query('w:instruction', $update) ?: [] as $instruction) {
+            if (!$instruction instanceof \DOMElement) {
+                continue;
+            }
+            if ($instruction->getAttribute('type') === 'fileDelete') {
+                break;
+            }
+            if ($instruction->getAttribute('type') === 'file') {
+                $errors[] = "package.xml: the update from {$update->getAttribute('fromversion')} extracts the files before <instruction type=\"fileDelete\" />, which deletes an old casing of the bootstrap file: move fileDelete first";
+                break;
+            }
         }
     }
 }
