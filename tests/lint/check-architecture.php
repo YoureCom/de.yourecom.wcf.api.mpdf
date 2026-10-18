@@ -24,6 +24,9 @@
  *  - core-table-write: no INSERT/UPDATE/DELETE/REPLACE on the tables of a base plugin (`coreTables` in
  *                   tests/lint/config.php), write through the commands of the base plugin; reading and the update
  *                   scripts in files/acp stay allowed
+ *  - permission-strict: no `getPermission(...) === true/false`, the session returns the raw group value ('1', 1, false)
+ *  - open-redirect:  a RedirectResponse to a request value (`$_GET/$_POST/$_REQUEST`, `returnURL`) needs an
+ *                   ApplicationHandler::isInternalURL() check in the same file
  *
  * Known findings that cannot be changed yet are listed in tests/lint/config.php (`architectureKnown`: relative file
  * => list of rules); entries that no longer match make the check fail, so the list can only shrink.
@@ -83,6 +86,16 @@ foreach (files(['files', 'files_wcf'], ['.php']) as $relative => $path) {
         $report($relative, 'listener-instanceof', 'event listener without an instanceof check of $eventObj');
     }
 
+    if (\preg_match('~getPermission\([^)]*\)\s*[!=]==?\s*(?:true|false)\b~', $source)) {
+        $report($relative, 'permission-strict', 'getPermission() compared with true/false, it returns the raw group value, cast with (bool)');
+    }
+
+    if (
+        \preg_match('~new\s+RedirectResponse\(\s*(?:\$_(?:GET|POST|REQUEST)\b|\$this->(?:returnURL|redirectURL|url)\b)~', $source)
+        && !\str_contains($source, 'isInternalURL')
+    ) {
+        $report($relative, 'open-redirect', 'redirect to a request value without ApplicationHandler::isInternalURL()');
+    }
     // an RPC request is never an ACP request: validateAction() rejects every name in $requireACP there
     if (\str_contains($relative, '/system/endpoint/') && \preg_match('~->validateAction\(\)~', $source)) {
         $report($relative, 'endpoint-validate-action', 'RPC endpoint calls validateAction(), call the check directly (e.g. validateDelete()) or check in the endpoint/command');
