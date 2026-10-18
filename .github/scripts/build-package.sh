@@ -47,7 +47,7 @@ pack() { # pack <source dir> <archive>
   [[ -d "$ROOT/$1" ]] || return 0
   # cd and back instead of a subshell: a subshell is one more process start (set -e ends the script when tar fails)
   cd "$ROOT/$1"
-  tar --format=ustar -cf "$STAGE/$2" --exclude='.DS_Store' --exclude='*.orig' --exclude='*.bak' -- *
+  tar --format=ustar -cf "$STAGE/$2" --exclude='.*' --exclude='*.orig' --exclude='*.bak' -- *
   cd "$ROOT"
 }
 pack files files.tar
