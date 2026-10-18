@@ -12,6 +12,9 @@
  *  - classes, interfaces, traits and enums have a docblock with a description, `@author` and `@license`
  *  - notifications (`files/lib/system/user/notification/`) link to an ACP controller of the package only with
  *    `'isACP' => true`; without it LinkHandler takes the frontend in the frontend and in cronjobs (the link leads nowhere)
+ *  - a `'message-id'` of a notification event (`files/lib/system/user/notification/event/`) contains the notification ID
+ *    (or a comment or response ID), or is left out (the core then makes a unique one); a second mail with the same
+ *    Message-ID is dropped silently by Gmail and others (IUserNotificationEvent::getEmailMessage(): it MUST never repeat)
  *
  * Methods (`#[\Override]` or a docblock) and strict comparisons are checked by PHPStan (phpstan.standard.neon).
  *
@@ -52,6 +55,12 @@ foreach (files(['files', 'files_wcf'], ['.php']) as $relative => $path) {
     if (\str_starts_with($relative, 'files/lib/system/user/notification/')) {
         foreach (acpLinksWithoutIsAcp($source, $acpControllers) as [$line, $controller]) {
             $errors[] = "{$relative}:{$line}: getLink('{$controller}') links to an ACP controller without 'isACP' => true (e-mails also 'isEmail' => true)";
+        }
+    }
+
+    if (\str_starts_with($relative, 'files/lib/system/user/notification/event/')) {
+        foreach (messageIdsWithoutUniquePart($source) as [$line, $value]) {
+            $errors[] = "{$relative}:{$line}: 'message-id' => {$value} repeats for a second mail about the same object, append \$this->getNotification()->notificationID (or leave it out)";
         }
     }
 
@@ -256,4 +265,67 @@ function classDocComment(array $tokens, int $index): ?string
     }
 
     return null;
+}
+
+/**
+ * Returns the `'message-id'` entries of a notification event whose value contains no part that never repeats
+ * (notificationID, commentID or responseID). A value that is a plain variable is followed to its assignment in the file.
+ *
+ * @return list<array{0: int, 1: string}> line and value
+ */
+function messageIdsWithoutUniquePart(string $source): array
+{
+    $tokens = \token_get_all($source);
+    $found = [];
+    foreach ($tokens as $index => $token) {
+        if (!\is_array($token) || $token[0] !== \T_CONSTANT_ENCAPSED_STRING || \strtolower(\trim($token[1], '\'"')) !== 'message-id') {
+            continue;
+        }
+        $arrow = nextToken($tokens, $index, 1);
+        if ($arrow === null || !\is_array($tokens[$arrow]) || $tokens[$arrow][0] !== \T_DOUBLE_ARROW) {
+            continue;
+        }
+        $value = expressionAfter($tokens, $arrow + 1, [',', ']', ')', ';']);
+        if (\preg_match('~^\$(\w+)$~', $value, $match)) {
+            foreach ($tokens as $i => $t) {
+                if (\is_array($t) && $t[0] === \T_VARIABLE && $t[1] === '$' . $match[1]) {
+                    $next = nextToken($tokens, $i, 1);
+                    if ($next !== null && $tokens[$next] === '=') {
+                        $value .= ' = ' . expressionAfter($tokens, $next + 1, [';']);
+                    }
+                }
+            }
+        }
+        if (!\preg_match('~notificationID|commentID|responseID~', $value)) {
+            $found[] = [$token[2], (string)\preg_replace('~\s+~', ' ', $value)];
+        }
+    }
+
+    return $found;
+}
+
+/**
+ * Returns the source of the expression starting at $start up to the first of $ends outside of brackets.
+ *
+ * @param list<array{0: int, 1: string, 2: int}|string> $tokens
+ * @param list<string> $ends
+ */
+function expressionAfter(array $tokens, int $start, array $ends): string
+{
+    $depth = 0;
+    $text = '';
+    for ($i = $start, $n = \count($tokens); $i < $n; $i++) {
+        $part = \is_array($tokens[$i]) ? $tokens[$i][1] : $tokens[$i];
+        if ($depth === 0 && \in_array($part, $ends, true)) {
+            break;
+        }
+        if (\in_array($part, ['(', '[', '{'], true) || (\is_array($tokens[$i]) && \in_array($tokens[$i][0], [\T_CURLY_OPEN, \T_DOLLAR_OPEN_CURLY_BRACES], true))) {
+            $depth++;
+        } elseif (\in_array($part, [')', ']', '}'], true)) {
+            $depth--;
+        }
+        $text .= $part;
+    }
+
+    return \trim($text);
 }
