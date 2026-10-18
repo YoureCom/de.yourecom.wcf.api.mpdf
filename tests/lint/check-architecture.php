@@ -27,6 +27,10 @@
  *  - permission-strict: no `getPermission(...) === true/false`, the session returns the raw group value ('1', 1, false)
  *  - open-redirect:  a RedirectResponse to a request value (`$_GET/$_POST/$_REQUEST`, `returnURL`) needs an
  *                   ApplicationHandler::isInternalURL() check in the same file
+ *  - grid-view-access: a grid view with an ID constructor parameter (comes from the client when rows are reloaded) whose
+ *                   isAccessible() only checks `userID > 0`, it has to check access to the parent object
+ *  - link-application: `{link controller='X'}` in templates/ of an application without `application=` for a controller
+ *                   (Page/Form/Action) of the plugin itself, it resolves against wcf
  *
  * Known findings that cannot be changed yet are listed in tests/lint/config.php (`architectureKnown`: relative file
  * => list of rules); entries that no longer match make the check fail, so the list can only shrink.
@@ -101,6 +105,16 @@ foreach (files(['files', 'files_wcf'], ['.php']) as $relative => $path) {
         $report($relative, 'endpoint-validate-action', 'RPC endpoint calls validateAction(), call the check directly (e.g. validateDelete()) or check in the endpoint/command');
     }
 
+    // rows are reloaded through core/grid-views/rows with the grid view parameters of the client: a grid view that takes
+    // such a parameter (an ID of a parent object) must check access to that object, not only that someone is logged in
+    if (
+        \preg_match('~\bextends\s+\\\\?(?:wcf\\\\system\\\\gridView\\\\)?AbstractGridView\b~', $source)
+        && \preg_match('~function\s+__construct\s*\([^)]*\$\w+ID\b~', $source)
+        && \preg_match('~function\s+isAccessible\s*\(\s*\)[^{]*\{\s*return\s+WCF::getUser\(\)->userID\s*>\s*0\s*;~', $source)
+    ) {
+        $report($relative, 'grid-view-access', 'grid view with an ID parameter whose isAccessible() only checks the login, check access to the parent object (e.g. canEdit())');
+    }
+
     if (!\preg_match('~\bextends\s+\\\\?(?:wcf\\\\data\\\\)?AbstractDatabaseObjectAction\b~', $source)) {
         continue;
     }
@@ -148,6 +162,20 @@ foreach (files(templateDirectories(), ['.tpl']) as $relative => $path) {
 
     if (\preg_match('~jsClipboard(?:Container|Item|Editor|MarkAll)|Controller/Clipboard~', $source)) {
         $report($relative, 'clipboard', 'clipboard markup, use bulk interactions of the grid/list view');
+    }
+
+    // without `application` a link resolves against wcf: controllers of the plugin's own application need it
+    if (\str_starts_with($relative, 'templates/') && (applications()['templates'] ?? 'wcf') !== 'wcf') {
+        \preg_match_all('~\{(?:link|anchor)\s+([^}]*)\}~', $source, $tags);
+        foreach ($tags[1] as $arguments) {
+            if (
+                \preg_match('~\bcontroller=[\x22\x27](\w+)[\x22\x27]~', $arguments, $controller)
+                && !\str_contains($arguments, 'application=')
+                && (\glob(ROOT . '/files/lib/*/' . $controller[1] . '{Page,Form,Action}.class.php', \GLOB_BRACE) ?: []) !== []
+            ) {
+                $report($relative, 'link-application', "{link controller='{$controller[1]}'} without application, the controller belongs to this plugin's application");
+            }
+        }
     }
 }
 
