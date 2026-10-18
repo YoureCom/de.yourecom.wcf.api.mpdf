@@ -48,6 +48,15 @@ pack() { # pack <source dir> <archive>
   # cd and back instead of a subshell: a subshell is one more process start (set -e ends the script when tar fails)
   cd "$ROOT/$1"
   tar --format=ustar -cf "$STAGE/$2" --exclude='.*' --exclude='*.orig' --exclude='*.bak' -- *
+  # .htaccess is the one hidden file every plugin ships on purpose (webroot protection of billing/lib/templates
+  # folders); --exclude='.*' above also strips it, so it is added back explicitly
+  local htaccessFiles=()
+  while IFS= read -r -d '' file; do
+    htaccessFiles+=("${file#./}")
+  done < <(find . -name '.htaccess' -type f -print0)
+  if [[ ${#htaccessFiles[@]} -gt 0 ]]; then
+    tar --format=ustar -rf "$STAGE/$2" -- "${htaccessFiles[@]}"
+  fi
   cd "$ROOT"
 }
 pack files files.tar
