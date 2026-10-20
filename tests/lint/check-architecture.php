@@ -10,7 +10,12 @@
  *  - ajax-method:   no custom `validate*()` AJAX entry points in AbstractDatabaseObjectAction classes (RPC endpoints)
  *  - endpoint-validate-action: RPC endpoints never call validateAction() (it rejects every name of `$requireACP`)
  *  - require-acp:   create/update/delete cannot be called through AJAX from the frontend: in `$requireACP` unless the
- *                   action denies them anyway (no `$permissions*` and no own `validate*()`)
+ *                   action denies them anyway (no `$permissions*` and no own `validate*()`). `$requireACP` only blocks AJAX
+ *                   requests from outside the ACP (validateAction()); forms, commands, cronjobs and RPC endpoints still run
+ *                   the method, also in the frontend (core: UserAction `create` from RegisterForm). An endpoint that calls
+ *                   validateX() directly bypasses `$requireACP`: for an ACP-only method the endpoint or validateX() has to
+ *                   check `admin.general.canUseAcp` or an administrator permission itself (not checked here, the rule
+ *                   cannot tell ACP-only methods from frontend methods)
  *  - acp-menu:      ACP menu items are registered with the ItemCollecting event (listener in the bootstrap), acpMenu.xml
  *                   only holds <delete> entries for removing old items
  *  - cache-builder: caches are eager (AbstractEagerCache) or tolerant (AbstractTolerantCache) caches of 6.2, not
@@ -149,7 +154,7 @@ foreach (files(['files', 'files_wcf'], ['.php']) as $relative => $path) {
         }
     }
     if ($reachable !== []) {
-        $report($relative, 'require-acp', 'the frontend can call ' . \implode(', ', $reachable) . ' through AJAX, add them to $requireACP (RPC endpoints call validate' . \ucfirst($reachable[0]) . '() directly)');
+        $report($relative, 'require-acp', 'the frontend can call ' . \implode(', ', $reachable) . ' through AJAX, add them to $requireACP (forms and endpoints with executeAction() keep working; an endpoint that calls validate' . \ucfirst($reachable[0]) . '() directly bypasses $requireACP and has to check the ACP or an administrator permission itself if the method is ACP-only)');
     }
 }
 
