@@ -12,6 +12,8 @@
  *  - fileDelete runs before the files of an update when it deletes an old casing of the bootstrap file: on a
  *    case-insensitive file system the extracted file keeps the old name and would be deleted afterwards
  *  - constants.php matches option.xml (written by apply.php; `--fix` writes it here)
+ *  - Beta rule: no installable file changed since the commit that set the current <version>, unless the version is raised
+ *    in the pending change
  *
  * Usage: php tests/lint/check-package.php [--fix]
  */
@@ -144,8 +146,9 @@ function unbumpedChange(): ?string
     if ($current === null || $git('rev-parse', '--is-shallow-repository') !== 'false' || $current !== $versionOf($git('show', 'HEAD:package.xml'))) {
         return null;
     }
-    $base = $git('log', '-1', '--format=%H', '-G<version>', '--', 'package.xml');
-    if ($base === null || $base === '') {
+    // --format=%H would lose its % to escapeshellarg() on Windows: the hash is the first word of --pretty=oneline
+    $base = \strtok((string)$git('log', '-1', '--pretty=oneline', '--no-decorate', '-G<version>', '--', 'package.xml'), ' ');
+    if ($base === false || $base === '') {
         return null;
     }
     // compared with the working tree: committed and pending changes alike; tests, docs and dev files are not installed

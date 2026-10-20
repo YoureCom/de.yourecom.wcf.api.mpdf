@@ -12,6 +12,7 @@
  *  - HTML: no duplicate attributes in a tag, no duplicate static ids in a template, `<button>` with a `type`,
  *    form fields with a label (`<label for>`, an enclosing `<label>`, `aria-label`, `aria-labelledby` or `title`;
  *    fields with a dynamic id are labelled by the including template)
+ *  - a template listener of the admin environment includes only templates that are in acptemplates/
  *
  * Usage: php tests/lint/check-templates.php
  */
@@ -110,6 +111,21 @@ foreach (files(['ts'], ['.ts', '.js']) as $relative => $path) {
         }
         if (\preg_match('~\bdboAction\(|WCF\.Action\.Proxy~', $text)) {
             $errors[] = "{$relative}:{$number}: legacy AJAX action, use an RPC endpoint";
+        }
+    }
+}
+
+// a template listener of the admin environment that includes a template of this plugin: the ACP engine loads only from
+// acptemplates/, a file that is only in templates/ breaks the ACP page (shop.shipping billingShippingAdmin, reibung.md)
+foreach (xml(ROOT . '/templateListener.xml')?->query('//w:templatelistener') ?: [] as $listener) {
+    if (!$listener instanceof \DOMElement || \trim((string)$listener->getElementsByTagName('environment')->item(0)?->textContent) !== 'admin') {
+        continue;
+    }
+    $code = (string)$listener->getElementsByTagName('templatecode')->item(0)?->textContent;
+    \preg_match_all('~\{include\s+file=[\'"]([^\'"{$]+)[\'"]~', $code, $includes);
+    foreach ($includes[1] as $template) {
+        if (\is_file(ROOT . "/templates/{$template}.tpl") && !\is_file(ROOT . "/acptemplates/{$template}.tpl")) {
+            $errors[] = "templateListener.xml: the admin listener \"{$listener->getAttribute('name')}\" includes {$template}, which is only in templates/; the ACP loads it from acptemplates/";
         }
     }
 }
