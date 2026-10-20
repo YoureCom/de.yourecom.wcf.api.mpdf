@@ -106,6 +106,13 @@ if ($deletesOldCasing) {
     }
 }
 
+// Beta rule (../CLAUDE.md, Versionen): every change of the installable package raises <version> in the same commit. Installable
+// files that differ from the commit which set the current version mean a change without its own version.
+$versionError = unbumpedChange();
+if ($versionError !== null) {
+    $errors[] = $versionError;
+}
+
 $constants = constantsSource(ROOT);
 $current = \is_file(ROOT . '/constants.php') ? (string)\file_get_contents(ROOT . '/constants.php') : null;
 if ($current === null || constantDefinitions($current) !== constantDefinitions($constants)) {
@@ -118,3 +125,37 @@ if ($current === null || constantDefinitions($current) !== constantDefinitions($
 }
 
 finish($errors, \count($required) . ' required packages');
+
+/**
+ * Names the installable files changed since the commit that set the current <version>, or null. Outside a git repository, in
+ * a shallow clone and while the version differs from HEAD (raised in the pending change) there is nothing to say.
+ */
+function unbumpedChange(): ?string
+{
+    $git = static function (string ...$arguments): ?string {
+        $command = 'git -C ' . \escapeshellarg(ROOT) . ' ' . \implode(' ', \array_map('escapeshellarg', $arguments)) . ' 2>' . (\PHP_OS_FAMILY === 'Windows' ? 'NUL' : '/dev/null');
+        \exec($command, $output, $code);
+
+        return $code === 0 ? \implode("\n", $output) : null;
+    };
+    $versionOf = static fn (?string $xml): ?string => $xml !== null && \preg_match('~<version>([^<]+)</version>~', $xml, $m) ? \trim($m[1]) : null;
+
+    $current = $versionOf((string)@\file_get_contents(ROOT . '/package.xml'));
+    if ($current === null || $git('rev-parse', '--is-shallow-repository') !== 'false' || $current !== $versionOf($git('show', 'HEAD:package.xml'))) {
+        return null;
+    }
+    $base = $git('log', '-1', '--format=%H', '-G<version>', '--', 'package.xml');
+    if ($base === null || $base === '') {
+        return null;
+    }
+    // compared with the working tree: committed and pending changes alike; tests, docs and dev files are not installed
+    $changed = \array_filter(\explode("\n", (string)$git('diff', '--name-only', $base, '--', 'files', 'files_wcf', 'templates', 'acptemplates', 'language', ':(glob)*.xml', ':(exclude)package.xml', ':(exclude)phpunit*.xml')));
+    $untracked = \array_filter(\explode("\n", (string)$git('ls-files', '--others', '--exclude-standard', '--', 'files', 'files_wcf', 'templates', 'acptemplates', 'language')));
+    $changed = \array_values(\array_unique([...$changed, ...$untracked]));
+    if ($changed === []) {
+        return null;
+    }
+
+    return "package.xml: version {$current} was set in " . \substr($base, 0, 7) . ', since then ' . \count($changed) . ' installable file(s) changed ('
+        . \implode(', ', \array_slice($changed, 0, 3)) . (\count($changed) > 3 ? ', ...' : '') . '): raise <version> (next Beta) and <date> with the change';
+}
