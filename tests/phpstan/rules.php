@@ -6,13 +6,20 @@
  * classes are loaded here, while the configuration is read.
  */
 
-require_once __DIR__ . '/OverrideOrDocblockRule.php';
+$rules = [
+    'OverrideOrDocblockRule',
+    'PermissionStrictRule',
+    'SecureActionRule',
+    'EndpointRequireAcpRule',
+];
+
+foreach ($rules as $rule) {
+    require_once __DIR__ . '/' . $rule . '.php';
+}
 
 return [
-    'services' => [
-        [
-            'class' => \yourecom\standard\phpstan\OverrideOrDocblockRule::class,
-            'tags' => ['phpstan.rules.rule'],
-        ],
-    ],
+    'services' => \array_map(
+        static fn (string $rule): array => ['class' => 'yourecom\standard\phpstan\\' . $rule, 'tags' => ['phpstan.rules.rule']],
+        $rules,
+    ),
 ];

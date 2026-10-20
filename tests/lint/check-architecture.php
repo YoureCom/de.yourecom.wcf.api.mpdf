@@ -29,13 +29,16 @@
  *  - core-table-write: no INSERT/UPDATE/DELETE/REPLACE on the tables of a base plugin (`coreTables` in
  *                   tests/lint/config.php), write through the commands of the base plugin; reading and the update
  *                   scripts in files/acp stay allowed
- *  - permission-strict: no `getPermission(...) === true/false`, the session returns the raw group value ('1', 1, false)
  *  - open-redirect:  a RedirectResponse to a request value (`$_GET/$_POST/$_REQUEST`, `returnURL`) needs an
  *                   ApplicationHandler::isInternalURL() check in the same file
  *  - grid-view-access: a grid view with an ID constructor parameter (comes from the client when rows are reloaded) whose
  *                   isAccessible() only checks `userID > 0`, it has to check access to the parent object
  *  - link-application: `{link controller='X'}` in templates/ of an application without `application=` for a controller
  *                   (Page/Form/Action) of the plugin itself, it resolves against wcf
+ *
+ * Rules that need the types of PHPStan are PHPStan rules (tests/phpstan): getPermission() compared with true/false
+ * (yourecom.permissionStrict), legacy actions that change data without the token (yourecom.secureAction), endpoints that
+ * bypass $requireACP (yourecom.endpointRequireAcp).
  *
  * Known findings that cannot be changed yet are listed in tests/lint/config.php (`architectureKnown`: relative file
  * => list of rules); entries that no longer match make the check fail, so the list can only shrink.
@@ -93,10 +96,6 @@ foreach (files(['files', 'files_wcf'], ['.php']) as $relative => $path) {
         && !\str_contains($source, 'instanceof')
     ) {
         $report($relative, 'listener-instanceof', 'event listener without an instanceof check of $eventObj');
-    }
-
-    if (\preg_match('~getPermission\([^)]*\)\s*[!=]==?\s*(?:true|false)\b~', $source)) {
-        $report($relative, 'permission-strict', 'getPermission() compared with true/false, it returns the raw group value, cast with (bool)');
     }
 
     if (
