@@ -35,6 +35,9 @@
  *                   isAccessible() only checks `userID > 0`, it has to check access to the parent object
  *  - link-application: `{link controller='X'}` in templates/ of an application without `application=` for a controller
  *                   (Page/Form/Action) of the plugin itself, it resolves against wcf
+ *  - sql-concat:    `->query()`/`->prepare()` with a string built by concatenation (literal `.` $var or a variable that
+ *                   was built with `.=`), instead of `->prepareStatement()` with bound parameters. Same risk as classic
+ *                   SQL injection regardless of where the value comes from (Marcel 21.10.2026, Sitzung).
  *
  * Rules that need the types of PHPStan are PHPStan rules (tests/phpstan): getPermission() compared with true/false
  * (yourecom.permissionStrict), legacy actions that change data without the token (yourecom.secureAction), endpoints that
