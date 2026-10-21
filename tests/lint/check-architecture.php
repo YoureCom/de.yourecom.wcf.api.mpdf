@@ -112,6 +112,22 @@ foreach (files(['files', 'files_wcf'], ['.php']) as $relative => $path) {
         $report($relative, 'endpoint-validate-action', 'RPC endpoint calls validateAction(), call the check directly (e.g. validateDelete()) or check in the endpoint/command');
     }
 
+    // ->query()/->prepare() (not the parameter-bound ->prepareStatement() wrapper) with a string built by
+    // concatenation: same risk as classic SQL injection, whether or not the value comes from user input
+    \preg_match_all('~\$(\w+)\s*(?:\.=|=\s*(?:\$\1\s*)?\.)~', $source, $concatMatches);
+    $concatenatedVars = \array_unique($concatMatches[1]);
+    \preg_match_all('~->(query|prepare)\s*\(\s*([^)]*)~', $source, $sqlCalls, \PREG_SET_ORDER);
+    foreach ($sqlCalls as $call) {
+        [, $method, $argument] = $call;
+        if (\str_contains($argument, '.')) {
+            $report($relative, 'sql-concat', "->{$method}() with inline string concatenation, use ->prepareStatement() with bound parameters");
+            continue;
+        }
+        if (\preg_match('~^\$(\w+)~', \trim($argument), $variable) && \in_array($variable[1], $concatenatedVars, true)) {
+            $report($relative, 'sql-concat', "->{$method}(\${$variable[1]}) where \${$variable[1]} is built by concatenation, use ->prepareStatement() with bound parameters");
+        }
+    }
+
     // rows are reloaded through core/grid-views/rows with the grid view parameters of the client: a grid view that takes
     // such a parameter (an ID of a parent object) must check access to that object, not only that someone is logged in
     if (

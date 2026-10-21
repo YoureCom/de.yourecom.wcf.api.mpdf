@@ -18,6 +18,7 @@ const ROOT = __DIR__ . '/../..';
  *     languageIgnore: list<string>,
  *     xsdKnown: array<string, list<string>>,
  *     architectureKnown: array<string, list<string>>,
+ *     commentsKnown: array<string, list<string>>,
  *     jsBuildDir: string|null,
  *     jsPhrasesDynamic: bool,
  * }
@@ -32,6 +33,7 @@ function config(): array
         'languageIgnore' => $config['languageIgnore'] ?? [],
         'xsdKnown' => $config['xsdKnown'] ?? [],
         'architectureKnown' => $config['architectureKnown'] ?? [],
+        'commentsKnown' => $config['commentsKnown'] ?? [],
         'jsBuildDir' => $config['jsBuildDir'] ?? null,
         'jsPhrasesDynamic' => $config['jsPhrasesDynamic'] ?? false,
         'coreTables' => $config['coreTables'] ?? [],
