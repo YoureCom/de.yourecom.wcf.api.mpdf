@@ -24,8 +24,10 @@ jobs:
   checks:
     name: Checks
     runs-on: ubuntu-latest
-    # Dependabot pull requests only signal new versions, the update itself happens once in _dev/standard
-    if: github.actor != 'dependabot[bot]'
+    # Dependabot pull requests only signal new versions, the update itself happens once in _dev/standard.
+    # The repository variable CI_ENABLED=false switches the checks off for pushes and pull requests (Actions quota used up
+    # since 13.10.2026, every push only produced a red mail); a release (tag) always runs them.
+    if: github.actor != 'dependabot[bot]' && (vars.CI_ENABLED != 'false' || startsWith(github.ref, 'refs/tags/'))
     defaults:
       run:
         working-directory: plugin
