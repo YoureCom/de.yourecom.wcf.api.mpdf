@@ -37,6 +37,7 @@ $tooLong = static function (string $text): ?string {
     $lines = \array_map(static fn (string $line): string => \trim($line, " \t*/"), $lines);
     $lines = \array_values(\array_filter($lines, static fn (string $line): bool => $line !== ''));
     $descriptive = \array_values(\array_filter($lines, static fn (string $line): bool => !\preg_match('~^@[a-zA-Z]~', $line)));
+
     return \count($descriptive) > 1 ? 'mehr als eine beschreibende Zeile' : null;
 };
 
@@ -53,6 +54,7 @@ $skipAttribute = static function (array $tokens, int $index, int $direction) use
             return $i + $direction;
         }
     }
+
     return $i;
 };
 
