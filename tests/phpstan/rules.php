@@ -8,6 +8,7 @@
 
 $rules = [
     'OverrideOrDocblockRule',
+    'InheritedPropertyDocblockRule',
     'PermissionStrictRule',
     'SecureActionRule',
     'EndpointRequireAcpRule',
