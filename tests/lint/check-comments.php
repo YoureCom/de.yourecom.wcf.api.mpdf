@@ -2,7 +2,8 @@
 
 /**
  * YoureCom Standard: comment rules (Marcel 21.10.2026, Sitzung). Managed by _dev/standard (apply.php), do not edit here.
- *  - templates (.tpl) and SCSS never have a comment (Smarty, HTML or C-style) - not even one line.
+ *  - templates (.tpl) and SCSS never have a comment (Smarty, HTML or C-style) - not even one line. An empty `{* *}`
+ *    (only whitespace inside) is allowed: it joins two template lines without output whitespace, as in the core.
  *  - PHP and TypeScript: a comment is only allowed directly above a class/interface/trait/enum, a function/method or a
  *    property, and only one short descriptive line - PHPStan/TSDoc annotation lines (@param, @return, @var, @template,
  *    @throws, @inheritDoc, ...) do not count toward that line and may be as many as needed. Anywhere else (inline in a
@@ -258,10 +259,12 @@ foreach (files(['ts'], ['.ts']) as $relative => $path) {
     }
 }
 
-// templates and SCSS: never a comment, not even one line
+// templates and SCSS: never a comment, not even one line; an empty `{* *}` (only whitespace) is no comment, it joins two
+// lines without output whitespace, as the core does (pageHeaderLogo.tpl, poll.tpl)
 foreach (files(templateDirectories(), ['.tpl']) as $relative => $path) {
     $source = (string)\file_get_contents($path);
-    if (\preg_match('~\{\*.*?\*\}~s', $source) || \preg_match('~<!--(?!\[if).*?-->~s', $source)) {
+    $hasText = \preg_match('~\{\*(?!\s*\*\}).*?\*\}~s', $source) === 1;
+    if ($hasText || \preg_match('~<!--(?!\[if).*?-->~s', $source)) {
         $report($relative, 'template-comment', 'Template-Kommentar ({* *} oder <!-- -->), Templates haben nie Kommentare');
     }
 }
