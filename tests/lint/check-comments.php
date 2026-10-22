@@ -9,6 +9,8 @@
  *    method body, floating, a file header) is a violation.
  *  - Every function/method needs either such a comment or #[\Override] (valid for a parent class, an interface or a
  *    trait method alike, PHP checks this itself at compile time) - never neither.
+ *  - Constructors only get `/** @inheritDoc *\/` (no descriptive line): they would be #[\Override], which PHP does not
+ *    allow there (constructor-inheritdoc, Marcel 22.10.2026).
  *  - _dev/standard itself is exempt (tooling documentation needs more room, Marcel 21.10.2026: "ist mir egal").
  *
  * Known findings that cannot be fixed yet are listed in tests/lint/config.php (`commentsKnown`: relative file => list
@@ -31,14 +33,18 @@ $report = static function (string $file, string $rule, string $message) use (&$f
     $messages["{$file}|{$rule}"] ??= "{$file}: [{$rule}] {$message}";
 };
 
-/** Strips comment delimiters and asterisks, returns null if the descriptive text (without PHPStan/TSDoc tags) is one line. */
-$tooLong = static function (string $text): ?string {
+/** Strips comment delimiters and asterisks, returns the descriptive lines (without PHPStan/TSDoc tags). */
+$descriptive = static function (string $text): array {
     $lines = \preg_split('~\R~', $text) ?: [];
     $lines = \array_map(static fn (string $line): string => \trim($line, " \t*/"), $lines);
     $lines = \array_values(\array_filter($lines, static fn (string $line): bool => $line !== ''));
-    $descriptive = \array_values(\array_filter($lines, static fn (string $line): bool => !\preg_match('~^@[a-zA-Z]~', $line)));
 
-    return \count($descriptive) > 1 ? 'mehr als eine beschreibende Zeile' : null;
+    return \array_values(\array_filter($lines, static fn (string $line): bool => !\preg_match('~^@[a-zA-Z]~', $line)));
+};
+
+/** Returns null if the descriptive text of a comment is at most one line. */
+$tooLong = static function (string $text) use ($descriptive): ?string {
+    return \count($descriptive($text)) > 1 ? 'mehr als eine beschreibende Zeile' : null;
 };
 
 // an attribute group "#[...]" can itself contain "]" inside strings/nested brackets; conservative bracket counting
@@ -103,6 +109,7 @@ foreach (files(['files', 'files_wcf'], ['.php']) as $relative => $path) {
         $line = $token[2];
         $hasOverride = false;
         $hasComment = false;
+        $comment = null;
         $j = $i - 1;
         while ($j >= 0) {
             $previous = $tokens[$j];
@@ -112,6 +119,7 @@ foreach (files(['files', 'files_wcf'], ['.php']) as $relative => $path) {
             }
             if (\is_array($previous) && \in_array($previous[0], [\T_COMMENT, \T_DOC_COMMENT], true)) {
                 $hasComment = $tooLong($previous[1]) === null;
+                $comment = $previous[1];
                 break;
             }
             $text = \is_array($previous) ? $previous[1] : $previous;
@@ -128,6 +136,16 @@ foreach (files(['files', 'files_wcf'], ['.php']) as $relative => $path) {
                 continue;
             }
             break;
+        }
+        $k = $i + 1;
+        while (\is_array($tokens[$k] ?? null) && $tokens[$k][0] === \T_WHITESPACE) {
+            $k++;
+        }
+        if (\is_array($tokens[$k] ?? null) && \strtolower($tokens[$k][1]) === '__construct') {
+            if ($comment === null || !\str_contains($comment, '@inheritDoc') || $descriptive($comment) !== []) {
+                $report($relative, 'constructor-inheritdoc', "Zeile {$line}: Konstruktor braucht nur /** @inheritDoc */ (kein Text, #[\\Override] erlaubt PHP dort nicht)");
+            }
+            continue;
         }
         if (!$hasOverride && !$hasComment) {
             $report($relative, 'function-needs-comment-or-override', "Zeile {$line}: Funktion ohne Kommentar und ohne #[\\Override]");
