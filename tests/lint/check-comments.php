@@ -9,8 +9,9 @@
  *    method body, floating, a file header) is a violation.
  *  - Every function/method needs either such a comment or #[\Override] (valid for a parent class, an interface or a
  *    trait method alike, PHP checks this itself at compile time) - never neither.
- *  - Constructors only get `/** @inheritDoc *\/` (no descriptive line): they would be #[\Override], which PHP does not
- *    allow there (constructor-inheritdoc, Marcel 22.10.2026).
+ *  - Magic methods (`__construct`, `__invoke`, `__get`, ...) only get `/** @inheritDoc *\/` (no descriptive line;
+ *    magic-method-inheritdoc, Marcel 22.10.2026). Any other method never has a docblock of only @inheritDoc: it gets
+ *    #[\Override] if it overrides something, otherwise a descriptive line (method-inheritdoc).
  *  - PHP docblocks: the first line (the description or @inheritDoc) is followed by an empty line before the annotation
  *    lines that PHPStan needs (comment-annotation-gap, Marcel 22.10.2026).
  *  - _dev/standard itself is exempt (tooling documentation needs more room, Marcel 21.10.2026: "ist mir egal").
@@ -163,10 +164,16 @@ foreach (files(['files', 'files_wcf'], ['.php']) as $relative => $path) {
         while (\is_array($tokens[$k] ?? null) && $tokens[$k][0] === \T_WHITESPACE) {
             $k++;
         }
-        if (\is_array($tokens[$k] ?? null) && \strtolower($tokens[$k][1]) === '__construct') {
-            if ($comment === null || !\str_contains($comment, '@inheritDoc') || $descriptive($comment) !== []) {
-                $report($relative, 'constructor-inheritdoc', "Zeile {$line}: Konstruktor braucht nur /** @inheritDoc */ (kein Text, #[\\Override] erlaubt PHP dort nicht)");
+        $name = \is_array($tokens[$k] ?? null) ? $tokens[$k][1] : '';
+        $onlyInheritDoc = $comment !== null && \str_contains($comment, '@inheritDoc') && $descriptive($comment) === [];
+        if (\str_starts_with($name, '__')) {
+            if (!$onlyInheritDoc) {
+                $report($relative, 'magic-method-inheritdoc', "Zeile {$line}: {$name}() braucht nur /** @inheritDoc */ (kein Text)");
             }
+            continue;
+        }
+        if ($onlyInheritDoc) {
+            $report($relative, 'method-inheritdoc', "Zeile {$line}: {$name}() mit @inheritDoc, stattdessen #[\\Override] (überschreibt) oder ein Satz (neue Methode)");
             continue;
         }
         if (!$hasOverride && !$hasComment) {
