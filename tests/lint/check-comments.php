@@ -11,6 +11,8 @@
  *    trait method alike, PHP checks this itself at compile time) - never neither.
  *  - Constructors only get `/** @inheritDoc *\/` (no descriptive line): they would be #[\Override], which PHP does not
  *    allow there (constructor-inheritdoc, Marcel 22.10.2026).
+ *  - PHP docblocks: the first line (the description or @inheritDoc) is followed by an empty line before the annotation
+ *    lines that PHPStan needs (comment-annotation-gap, Marcel 22.10.2026).
  *  - _dev/standard itself is exempt (tooling documentation needs more room, Marcel 21.10.2026: "ist mir egal").
  *
  * Known findings that cannot be fixed yet are listed in tests/lint/config.php (`commentsKnown`: relative file => list
@@ -45,6 +47,23 @@ $descriptive = static function (string $text): array {
 /** Returns null if the descriptive text of a comment is at most one line. */
 $tooLong = static function (string $text) use ($descriptive): ?string {
     return \count($descriptive($text)) > 1 ? 'mehr als eine beschreibende Zeile' : null;
+};
+
+/** Returns true if the first line (description or @inheritDoc) is directly followed by an annotation line. */
+$missingGap = static function (string $text): bool {
+    $lines = \array_map(static fn (string $line): string => \trim($line, " \t*/"), \preg_split('~\R~', $text) ?: []);
+    foreach ($lines as $index => $line) {
+        if ($line === '') {
+            continue;
+        }
+        if (\preg_match('~^@[a-zA-Z]~', $line) && !\preg_match('~^@inheritDoc\b~i', $line)) {
+            return false;
+        }
+
+        return \preg_match('~^@[a-zA-Z]~', $lines[$index + 1] ?? '') === 1;
+    }
+
+    return false;
 };
 
 // an attribute group "#[...]" can itself contain "]" inside strings/nested brackets; conservative bracket counting
@@ -98,6 +117,9 @@ foreach (files(['files', 'files_wcf'], ['.php']) as $relative => $path) {
         $problem = $tooLong($token[1]);
         if ($problem !== null) {
             $report($relative, 'comment-too-long', "Zeile {$line}: {$problem}, ein kurzer Satz reicht");
+        }
+        if ($missingGap($token[1])) {
+            $report($relative, 'comment-annotation-gap', "Zeile {$line}: Leerzeile zwischen erster Zeile (Beschreibung oder @inheritDoc) und den Annotationen fehlt");
         }
     }
 
