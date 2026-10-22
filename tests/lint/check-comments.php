@@ -61,7 +61,7 @@ $skipAttribute = static function (array $tokens, int $index, int $direction) use
 foreach (files(['files', 'files_wcf'], ['.php']) as $relative => $path) {
     $tokens = \token_get_all((string)\file_get_contents($path));
     $count = \count($tokens);
-    $declarationTokens = [\T_CLASS, \T_INTERFACE, \T_TRAIT, \T_ENUM, \T_FUNCTION, \T_PUBLIC, \T_PROTECTED, \T_PRIVATE, \T_VAR, \T_READONLY, \T_CASE, \T_CONST];
+    $declarationTokens = [\T_CLASS, \T_INTERFACE, \T_TRAIT, \T_ENUM, \T_FUNCTION, \T_PUBLIC, \T_PROTECTED, \T_PRIVATE, \T_VAR, \T_READONLY, \T_CASE, \T_CONST, \T_FINAL, \T_ABSTRACT, \T_STATIC];
 
     for ($i = 0; $i < $count; $i++) {
         $token = $tokens[$i];
