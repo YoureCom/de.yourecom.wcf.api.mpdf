@@ -4,6 +4,8 @@
  * YoureCom Standard: comment rules (Marcel 21.10.2026, Sitzung). Managed by _dev/standard (apply.php), do not edit here.
  *  - templates (.tpl) and SCSS never have a comment (Smarty, HTML or C-style) - not even one line. An empty `{* *}`
  *    (only whitespace inside) is allowed: it joins two template lines without output whitespace, as in the core.
+ *  - XML never has a comment, not even a section marker like `<!-- user -->`: every *.xml in the plugin root (PIP
+ *    files, package.xml) except phpunit*.xml (tool configuration), and language/*.xml (xml-comment, Marcel 22.10.2026).
  *  - PHP and TypeScript: a comment is only allowed directly above a class/interface/trait/enum, a function/method or a
  *    property, and only one short descriptive line - PHPStan/TSDoc annotation lines (@param, @return, @var, @template,
  *    @throws, @inheritDoc, ...) do not count toward that line and may be as many as needed. Anywhere else (inline in a
@@ -272,6 +274,29 @@ foreach (files(['files/style', 'files_wcf/style'], ['.scss']) as $relative => $p
     $source = (string)\file_get_contents($path);
     if (\preg_match('~//|/\*~', $source)) {
         $report($relative, 'scss-comment', 'SCSS-Kommentar, SCSS hat nie Kommentare');
+    }
+}
+// XML: every file in the root (PIP files, package.xml) except the tool configuration phpunit*.xml, the language files
+$xmlFiles = [];
+foreach (\glob(ROOT . '/*.xml') ?: [] as $path) {
+    if (!\str_starts_with(\basename($path), 'phpunit')) {
+        $xmlFiles[\basename($path)] = $path;
+    }
+}
+foreach (files(['language'], ['.xml']) as $relative => $path) {
+    $xmlFiles[$relative] = $path;
+}
+foreach ($xmlFiles as $relative => $path) {
+    // template code in CDATA may contain HTML comments; blank it out but keep its line breaks for the line number
+    $source = (string)\preg_replace_callback(
+        '~<!\[CDATA\[.*?\]\]>~s',
+        static fn (array $match): string => \str_repeat("\n", \substr_count($match[0], "\n")),
+        (string)\file_get_contents($path),
+    );
+    $position = \strpos($source, '<!--');
+    if ($position !== false) {
+        $line = \substr_count(\substr($source, 0, $position), "\n") + 1;
+        $report($relative, 'xml-comment', "Zeile {$line}: XML-Kommentar (<!-- -->), XML des Pakets hat nie Kommentare");
     }
 }
 
