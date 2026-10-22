@@ -37,13 +37,29 @@ $report = static function (string $file, string $rule, string $message) use (&$f
     $messages["{$file}|{$rule}"] ??= "{$file}: [{$rule}] {$message}";
 };
 
-/** Strips comment delimiters and asterisks, returns the descriptive lines (without PHPStan/TSDoc tags). */
+/**
+ * Strips comment delimiters and asterisks, returns the descriptive lines: without PHPStan/TSDoc tags and the lines that
+ * continue a tag up to the next empty line (e.g. a multi-line array shape of @return), like OverrideOrDocblockRule.
+ */
 $descriptive = static function (string $text): array {
-    $lines = \preg_split('~\R~', $text) ?: [];
-    $lines = \array_map(static fn (string $line): string => \trim($line, " \t*/"), $lines);
-    $lines = \array_values(\array_filter($lines, static fn (string $line): bool => $line !== ''));
+    $descriptive = [];
+    $inTag = false;
+    foreach (\preg_split('~\R~', $text) ?: [] as $line) {
+        $line = \trim($line, " \t*/");
+        if ($line === '') {
+            $inTag = false;
+            continue;
+        }
+        if (\preg_match('~^\{?@[a-zA-Z]~', $line)) {
+            $inTag = true;
+            continue;
+        }
+        if (!$inTag) {
+            $descriptive[] = $line;
+        }
+    }
 
-    return \array_values(\array_filter($lines, static fn (string $line): bool => !\preg_match('~^@[a-zA-Z]~', $line)));
+    return $descriptive;
 };
 
 /** Returns null if the descriptive text of a comment is at most one line. */
@@ -165,7 +181,17 @@ foreach (files(['files', 'files_wcf'], ['.php']) as $relative => $path) {
         while (\is_array($tokens[$k] ?? null) && $tokens[$k][0] === \T_WHITESPACE) {
             $k++;
         }
+        if (($tokens[$k] ?? null) === '&') {
+            $k++;
+            while (\is_array($tokens[$k] ?? null) && $tokens[$k][0] === \T_WHITESPACE) {
+                $k++;
+            }
+        }
         $name = \is_array($tokens[$k] ?? null) ? $tokens[$k][1] : '';
+        // a closure has no name and cannot carry a docblock
+        if ($name === '') {
+            continue;
+        }
         $onlyInheritDoc = $comment !== null && \str_contains($comment, '@inheritDoc') && $descriptive($comment) === [];
         // with #[\Override] the PHPStan rule yourecom.method.inheritDoc forbids the @inheritDoc docblock
         if (\str_starts_with($name, '__') && !$hasOverride) {

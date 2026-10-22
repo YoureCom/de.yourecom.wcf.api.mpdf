@@ -35,9 +35,11 @@
  *                   isAccessible() only checks `userID > 0`, it has to check access to the parent object
  *  - link-application: `{link controller='X'}` in templates/ of an application without `application=` for a controller
  *                   (Page/Form/Action) of the plugin itself, it resolves against wcf
- *  - sql-concat:    `->query()`/`->prepare()` with a string built by concatenation (literal `.` $var or a variable that
- *                   was built with `.=`), instead of `->prepareStatement()` with bound parameters. Same risk as classic
- *                   SQL injection regardless of where the value comes from (Marcel 21.10.2026, Sitzung). `query()` on a
+ *  - sql-concat:    `->query()`/`->prepare()`/`->prepareStatement()`/`->prepareUnmanaged()` with a string built by
+ *                   concatenation (literal `.` $var or a variable that was built with `.=`) instead of a literal SQL
+ *                   string with `?` placeholders bound through execute(). Same risk as classic SQL injection regardless
+ *                   of where the value comes from (Marcel 21.10.2026, Sitzung). Use `prepare()`: prepareStatement() is
+ *                   deprecated in 6.2 and, like prepareUnmanaged(), does not resolve `app1_` table names. `query()` on a
  *                   DOMXPath variable is XPath, not SQL, and is skipped
  *
  * Rules that need the types of PHPStan are PHPStan rules (tests/phpstan): getPermission() compared with true/false
@@ -113,25 +115,25 @@ foreach (files(['files', 'files_wcf'], ['.php']) as $relative => $path) {
         $report($relative, 'endpoint-validate-action', 'RPC endpoint calls validateAction(), call the check directly (e.g. validateDelete()) or check in the endpoint/command');
     }
 
-    // ->query()/->prepare() (not the parameter-bound ->prepareStatement() wrapper) with a string built by
-    // concatenation: same risk as classic SQL injection, whether or not the value comes from user input
+    // SQL built by concatenation instead of `?` placeholders: same risk as classic SQL injection, whether or not the
+    // value comes from user input
     \preg_match_all('~\$(\w+)\s*(?:\.=|=\s*(?:\$\1\s*)?\.)~', $source, $concatMatches);
     $concatenatedVars = \array_unique($concatMatches[1]);
     // DOMXPath::query() takes an XPath expression, not SQL
     \preg_match_all('~\bDOMXPath\s+\$(\w+)|\$(\w+)\s*=\s*new\s+\\\\?DOMXPath\b~', $source, $xpathMatches);
     $xpathVars = \array_filter([...$xpathMatches[1], ...$xpathMatches[2]]);
-    \preg_match_all('~(?:\$(\w+))?->(query|prepare)\s*\(\s*([^)]*)~', $source, $sqlCalls, \PREG_SET_ORDER);
+    \preg_match_all('~(?:\$(\w+))?->(query|prepare|prepareStatement|prepareUnmanaged)\s*\(\s*([^)]*)~', $source, $sqlCalls, \PREG_SET_ORDER);
     foreach ($sqlCalls as $call) {
         [, $receiver, $method, $argument] = $call;
         if ($method === 'query' && \in_array($receiver, $xpathVars, true)) {
             continue;
         }
         if (\str_contains($argument, '.')) {
-            $report($relative, 'sql-concat', "->{$method}() with inline string concatenation, use ->prepareStatement() with bound parameters");
+            $report($relative, 'sql-concat', "->{$method}() with inline string concatenation, use ->prepare() with a literal SQL string and ? placeholders");
             continue;
         }
         if (\preg_match('~^\$(\w+)~', \trim($argument), $variable) && \in_array($variable[1], $concatenatedVars, true)) {
-            $report($relative, 'sql-concat', "->{$method}(\${$variable[1]}) where \${$variable[1]} is built by concatenation, use ->prepareStatement() with bound parameters");
+            $report($relative, 'sql-concat', "->{$method}(\${$variable[1]}) where \${$variable[1]} is built by concatenation, use ->prepare() with a literal SQL string and ? placeholders");
         }
     }
 
