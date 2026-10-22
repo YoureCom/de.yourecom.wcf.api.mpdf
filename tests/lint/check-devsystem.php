@@ -66,7 +66,8 @@ foreach (\glob(ROOT . '/*.xml') ?: [] as $file) {
 }
 
 $known = [];
-$statement = WCF::getDB()->prepare('SELECT optionName FROM wcf1_user_group_option');
+$sql = 'SELECT optionName FROM wcf1_user_group_option';
+$statement = WCF::getDB()->prepare($sql);
 $statement->execute();
 foreach ($statement->fetchAll(\PDO::FETCH_COLUMN) as $name) {
     $known[(string)$name] = true;

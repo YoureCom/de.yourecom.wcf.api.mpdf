@@ -41,6 +41,9 @@
  *                   of where the value comes from (Marcel 21.10.2026, Sitzung). Use `prepare()`: prepareStatement() is
  *                   deprecated in 6.2 and, like prepareUnmanaged(), does not resolve `app1_` table names. `query()` on a
  *                   DOMXPath variable is XPath, not SQL, and is skipped
+ *  - sql-variable:  `->prepare()`/`->prepareStatement()`/`->prepareUnmanaged()` always take `$sql` as first argument:
+ *                   the SQL is assigned to `$sql` before, never written into the call or passed as another expression
+ *                   (`$this->sql`, `$data['sql']`). Checked in files/, files_wcf/ and tests/ (Marcel 22.10.2026)
  *
  * Rules that need the types of PHPStan are PHPStan rules (tests/phpstan): getPermission() compared with true/false
  * (yourecom.permissionStrict), legacy actions that change data without the token (yourecom.secureAction), endpoints that
@@ -242,6 +245,33 @@ foreach (files(['files', 'files_wcf'], ['.js']) as $relative => $path) {
 foreach (files(templateDirectories(), ['.tpl']) as $relative => $path) {
     if (!\in_array('object-action', $findings[$relative] ?? [], true)) {
         $legacyAjax($relative, (string)\file_get_contents($path));
+    }
+}
+
+// SQL is assigned to $sql first, the statement is prepared from that variable (Marcel 22.10.2026): no SQL literal and
+// no other expression ($this->sql, $data['sql']) inside the call, also not in tests
+foreach (files(['files', 'files_wcf', 'tests'], ['.php']) as $relative => $path) {
+    $tokens = \token_get_all((string)\file_get_contents($path));
+    $count = \count($tokens);
+    for ($i = 0; $i < $count; $i++) {
+        if (!\is_array($tokens[$i]) || !\in_array($tokens[$i][0], [\T_OBJECT_OPERATOR, \T_NULLSAFE_OBJECT_OPERATOR], true)) {
+            continue;
+        }
+        $name = nextToken($tokens, $i, 1);
+        if ($name === null || !\is_array($tokens[$name]) || !\in_array($tokens[$name][1], ['prepare', 'prepareStatement', 'prepareUnmanaged'], true)) {
+            continue;
+        }
+        $open = nextToken($tokens, $name, 1);
+        if ($open === null || $tokens[$open] !== '(') {
+            continue;
+        }
+        $argument = nextToken($tokens, $open, 1);
+        $after = $argument === null ? null : nextToken($tokens, $argument, 1);
+        $isSqlVariable = $argument !== null && \is_array($tokens[$argument]) && $tokens[$argument][0] === \T_VARIABLE
+            && $tokens[$argument][1] === '$sql' && $after !== null && \in_array($tokens[$after], [',', ')'], true);
+        if (!$isSqlVariable) {
+            $report($relative, 'sql-variable', "line {$tokens[$i][2]}: ->{$tokens[$name][1]}() takes the SQL from \$sql, assign the SQL to \$sql first");
+        }
     }
 }
 
