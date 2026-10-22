@@ -25,8 +25,6 @@ foreach (files(templateDirectories(), ['.tpl']) as $relative => $path) {
 
 // phrases whose key is built at runtime cannot be followed, tests/lint/config.php: 'jsPhrasesDynamic' => true
 $dynamicKeys = (bool)(config()['jsPhrasesDynamic'] ?? false);
-
-$dynamicKeys = (bool)(config()['jsPhrasesDynamic'] ?? false);
 $languages = ['de' => \array_flip(languageKeys('de')), 'en' => \array_flip(languageKeys('en'))];
 $used = [];
 $errors = [];
@@ -44,6 +42,10 @@ foreach (files(['ts'], ['.ts']) as $relative => $path) {
         }
 
         foreach ($keys[1] as $key) {
+            if ($dynamicKeys && \str_ends_with($key, '.')) {
+                continue;
+            }
+
             $used[$key] = $relative;
         }
     }
