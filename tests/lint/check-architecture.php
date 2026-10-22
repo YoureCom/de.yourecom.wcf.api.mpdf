@@ -37,7 +37,8 @@
  *                   (Page/Form/Action) of the plugin itself, it resolves against wcf
  *  - sql-concat:    `->query()`/`->prepare()` with a string built by concatenation (literal `.` $var or a variable that
  *                   was built with `.=`), instead of `->prepareStatement()` with bound parameters. Same risk as classic
- *                   SQL injection regardless of where the value comes from (Marcel 21.10.2026, Sitzung).
+ *                   SQL injection regardless of where the value comes from (Marcel 21.10.2026, Sitzung). `query()` on a
+ *                   DOMXPath variable is XPath, not SQL, and is skipped
  *
  * Rules that need the types of PHPStan are PHPStan rules (tests/phpstan): getPermission() compared with true/false
  * (yourecom.permissionStrict), legacy actions that change data without the token (yourecom.secureAction), endpoints that
@@ -116,9 +117,15 @@ foreach (files(['files', 'files_wcf'], ['.php']) as $relative => $path) {
     // concatenation: same risk as classic SQL injection, whether or not the value comes from user input
     \preg_match_all('~\$(\w+)\s*(?:\.=|=\s*(?:\$\1\s*)?\.)~', $source, $concatMatches);
     $concatenatedVars = \array_unique($concatMatches[1]);
-    \preg_match_all('~->(query|prepare)\s*\(\s*([^)]*)~', $source, $sqlCalls, \PREG_SET_ORDER);
+    // DOMXPath::query() takes an XPath expression, not SQL
+    \preg_match_all('~\bDOMXPath\s+\$(\w+)|\$(\w+)\s*=\s*new\s+\\\\?DOMXPath\b~', $source, $xpathMatches);
+    $xpathVars = \array_filter([...$xpathMatches[1], ...$xpathMatches[2]]);
+    \preg_match_all('~(?:\$(\w+))?->(query|prepare)\s*\(\s*([^)]*)~', $source, $sqlCalls, \PREG_SET_ORDER);
     foreach ($sqlCalls as $call) {
-        [, $method, $argument] = $call;
+        [, $receiver, $method, $argument] = $call;
+        if ($method === 'query' && \in_array($receiver, $xpathVars, true)) {
+            continue;
+        }
         if (\str_contains($argument, '.')) {
             $report($relative, 'sql-concat', "->{$method}() with inline string concatenation, use ->prepareStatement() with bound parameters");
             continue;
