@@ -125,6 +125,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: php tests/lint/check-architecture.php
 
+      - name: Comments (no comments in templates, SCSS and XML; one sentence above classes, methods and properties)
+        if: ${{ !cancelled() }}
+        run: php tests/lint/check-comments.php
+
       - uses: actions/setup-node@v7
         if: ${{ !cancelled() && steps.detect.outputs.typescript == 'true' }}
         with:

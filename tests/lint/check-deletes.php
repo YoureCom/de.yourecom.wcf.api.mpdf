@@ -7,6 +7,11 @@
  *    (files/, files_wcf/), templateDelete.xml (templates/) or acpTemplateDelete.xml (acptemplates/)
  *  - every language item of a released version that is gone is listed in the <delete> block of each language file
  *  - nothing that the package still ships is deleted (a file moved from files/ to files_wcf/ keeps its target)
+ *  - a template of the file PIP (files/templates/*.tpl, files/acp/templates/*.tpl) renamed only in its casing needs no
+ *    delete entry: the core loads it by its exact name, an old casing left on Linux is never read. Any other file keeps
+ *    its delete entry (SCSS is collected by folder, acptemplates/ rows clash with the unique key of the template table)
+ *  - an entry that deletes an old casing runs in every update before the files are extracted: on a case-insensitive
+ *    file system (Windows) the old name is the shipped file, a delete afterwards removes it
  *
  * A released version is the state of the git history before <version> in package.xml changed (and the first commit),
  * as long as package.xml names this package: the history of another package the repository started from does not
@@ -42,9 +47,12 @@ $errors = [];
 
 // what the package ships now: pip => "application|entry" => true
 $shipped = [];
+// the same in lower case: pip => "application|entry" => shipped casing
+$shippedFolded = [];
 foreach (\explode("\n", (string)git(['-c', 'core.quotePath=false', 'ls-files'])) as $path) {
     if (($target = deleteTarget($path, $applications)) !== null) {
         $shipped[$target[0]]["{$target[1]}|{$target[2]}"] = true;
+        $shippedFolded[$target[0]][\mb_strtolower("{$target[1]}|{$target[2]}")] = $target[2];
     }
 }
 
@@ -54,7 +62,11 @@ $releases = releases();
 $removed = [];
 foreach (releasedFiles($releases) as $path) {
     $target = deleteTarget($path, $applications);
-    if ($target !== null && !isset($shipped[$target[0]]["{$target[1]}|{$target[2]}"])) {
+    if (
+        $target !== null
+        && !isset($shipped[$target[0]]["{$target[1]}|{$target[2]}"])
+        && !(isTemplateByName($target[0], $target[2]) && isset($shippedFolded[$target[0]][\mb_strtolower("{$target[1]}|{$target[2]}")]))
+    ) {
         $removed[$target[0]]["{$target[1]}|{$target[2]}"] = [$target[1], $target[2]];
     }
 }
@@ -86,6 +98,8 @@ foreach (['fileDelete' => 'file', 'templateDelete' => 'template', 'acpTemplateDe
         [$application, $entry] = \explode('|', $key, 2);
         if (isset($shipped[$pip]["{$application}|{$entry}"]) || ($application === '' && isShippedAnywhere($shipped[$pip] ?? [], $entry))) {
             $errors[] = "{$pip}.xml: deletes {$label}, which the package still ships";
+        } elseif (($casing = shippedCasing($shippedFolded[$pip] ?? [], $application, $entry)) !== null && !deleteRunsFirst($pip)) {
+            $errors[] = "{$pip}.xml: deletes {$label}, the package ships {$casing}: on a case-insensitive file system that is the same file, remove the entry or run <instruction type=\"{$pip}\" /> first in every update";
         }
     }
     if ($missing === []) {
@@ -98,7 +112,9 @@ foreach (['fileDelete' => 'file', 'templateDelete' => 'template', 'acpTemplateDe
         echo "{$pip}.xml: added " . \count($missing) . " entr" . (\count($missing) === 1 ? 'y' : 'ies') . "\n";
     } else {
         foreach ($missing as [$application, $entry]) {
-            $errors[] = "{$pip}.xml: {$entry} ({$application}) was removed, delete it on update";
+            $casing = shippedCasing($shippedFolded[$pip] ?? [], $application, $entry);
+            $errors[] = "{$pip}.xml: {$entry} ({$application}) was removed, delete it on update"
+                . ($casing !== null ? " (renamed to {$casing}: run <instruction type=\"{$pip}\" /> first in every update)" : '');
         }
     }
 }
@@ -354,6 +370,57 @@ function isShippedAnywhere(array $shipped, string $entry): bool
     }
 
     return false;
+}
+
+/**
+ * Returns the shipped casing of an entry that differs from it only in its casing, null if there is none (an entry without
+ * application matches any application).
+ *
+ * @param array<string, string> $shippedFolded
+ */
+function shippedCasing(array $shippedFolded, string $application, string $entry): ?string
+{
+    $folded = \mb_strtolower($entry);
+    foreach ($shippedFolded as $key => $casing) {
+        [$shippedApplication, $shippedEntry] = \explode('|', $key, 2);
+        if ($shippedEntry === $folded && ($application === '' || $shippedApplication === \mb_strtolower($application))) {
+            return $casing;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Tells whether an entry is a template that the file PIP installs and the core only loads by its exact name.
+ */
+function isTemplateByName(string $pip, string $entry): bool
+{
+    return $pip === 'fileDelete' && \preg_match('~^(acp/)?templates/[^/]+\.tpl$~', $entry) === 1;
+}
+
+/**
+ * Tells whether every update block of package.xml runs the delete PIP before its first instruction of the install PIP
+ * (fileDelete before `file`, templateDelete before `template`, acpTemplateDelete before `acpTemplate`), so that an old
+ * casing is gone before the shipped file is extracted.
+ */
+function deleteRunsFirst(string $pip): bool
+{
+    $install = \lcfirst(\substr($pip, 0, -\strlen('Delete')));
+    $package = xml(ROOT . '/package.xml');
+    foreach ($package?->query('//w:instructions[@type="update"]') ?: [] as $update) {
+        foreach ($package?->query('w:instruction', $update) ?: [] as $instruction) {
+            $type = $instruction instanceof \DOMElement ? $instruction->getAttribute('type') : '';
+            if ($type === $pip) {
+                continue 2;
+            }
+            if ($type === $install) {
+                return false;
+            }
+        }
+    }
+
+    return true;
 }
 
 /**

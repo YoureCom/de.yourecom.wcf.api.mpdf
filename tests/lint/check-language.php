@@ -3,7 +3,9 @@
 /**
  * YoureCom Standard: checks the language files. Managed by _dev/standard (apply.php), do not edit here.
  *  - de.xml and en.xml define the same variables
- *  - German texts that address the reader have the informal and the formal variant
+ *  - German texts that address the reader have the informal and the formal variant; the text outside the informal
+ *    branch (the formal one and everything around the conditions) has no "du" forms and does not start a sentence
+ *    with an informal imperative ("Baue einen Brunnen")
  *  - every statically used variable with one of the prefixes of tests/lint/config.php (`languagePrefixes`) exists
  *  - the texts use no `{@...}` output and compare strictly in `{if}`/`{elseif}` (like the templates)
  *  - every item is filed under a category {lang}/getPhrase() can actually find at runtime: WCF's Language::get()
@@ -21,6 +23,63 @@ namespace yourecom\standard;
 
 require __DIR__ . '/lib.php';
 
+// informal imperatives that start a sentence (the formal variant is "Wählen Sie ...")
+const IMPERATIVES = 'Achte|Aktiviere|Bearbeite|Beachte|Bestätige|Brich|Deaktiviere|Drücke|Entferne|Erstelle|Fahre|Füge|Gehe|Gib|Klicke|Kaufe|Kehre|Kopiere|Lege|Lies|Lösche|Melde|Nimm|Nutze|Prüfe|Schließe|Sieh|Speichere|Starte|Trage|Verwende|Wähle|Warte|Wechsle|Öffne|Überprüfe|Übernimm|Baue|Verkaufe|Sammle|Lass|Probiere|Tippe|Setze|Ziehe|Schreibe|Gestalte|Finde|Bewege|Nenne|Vergib|Sende|Beginne|Beende';
+
+/**
+ * Removes the branches of `{if LANGUAGE_USE_INFORMAL_VARIANT}` that are only shown for "du" (the `{else}` part for
+ * a negated condition), nested conditions inside them included.
+ */
+function withoutInformalBranches(string $text): string
+{
+    \preg_match_all('~\{(if|elseif)(?=[\s}])([^}]*)\}|\{(else)\}|\{/if\}~', $text, $tokens, \PREG_SET_ORDER | \PREG_OFFSET_CAPTURE);
+    $cut = [];
+    $stack = [];
+    foreach ($tokens as $token) {
+        $tag = $token[0][0];
+        $offset = $token[0][1];
+        $end = $offset + \strlen($tag);
+        if (($token[1][0] ?? '') === 'if') {
+            $informal = \str_contains($token[2][0], 'LANGUAGE_USE_INFORMAL_VARIANT');
+            $negated = $informal && \str_starts_with(\ltrim($token[2][0]), '!');
+            $stack[] = ['from' => $informal && !$negated ? $end : null, 'negated' => $negated];
+        } elseif ($stack === []) {
+            continue;
+        } elseif (($token[1][0] ?? '') === 'elseif' || ($token[3][0] ?? '') === 'else') {
+            $top = \count($stack) - 1;
+            if ($stack[$top]['from'] !== null) {
+                $cut[] = [$stack[$top]['from'], $offset];
+                $stack[$top]['from'] = null;
+            }
+            if (($token[1][0] ?? '') === 'elseif' && \str_contains($token[2][0], 'LANGUAGE_USE_INFORMAL_VARIANT') && !\str_starts_with(\ltrim($token[2][0]), '!')) {
+                $stack[$top]['from'] = $end;
+            }
+            if ($stack[$top]['negated'] && $tag === '{else}') {
+                $stack[$top]['from'] = $end;
+                $stack[$top]['negated'] = false;
+            }
+        } else {
+            $top = \array_pop($stack);
+            if ($top['from'] !== null) {
+                $cut[] = [$top['from'], $offset];
+            }
+        }
+    }
+    \usort($cut, static fn (array $a, array $b): int => $a[0] <=> $b[0]);
+    $outer = [];
+    foreach ($cut as $range) {
+        // a cut inside an earlier one is already gone
+        if ($outer === [] || $range[0] >= $outer[\count($outer) - 1][1]) {
+            $outer[] = $range;
+        }
+    }
+    foreach (\array_reverse($outer) as [$from, $to]) {
+        $text = \substr($text, 0, $from) . \substr($text, $to);
+    }
+
+    return $text;
+}
+
 $config = config();
 $de = languageKeys('de');
 $en = languageKeys('en');
@@ -35,11 +94,21 @@ foreach (\array_diff($en, $de) as $key) {
 
 \preg_match_all('~<item name="([^"]+)"><!\[CDATA\[(.*?)\]\]></item>~s', \is_file(ROOT . '/language/de.xml') ? (string)\file_get_contents(ROOT . '/language/de.xml') : '', $items, \PREG_SET_ORDER);
 foreach ($items as $item) {
-    if (\str_contains($item[2], 'LANGUAGE_USE_INFORMAL_VARIANT')) {
-        continue;
+    if (!\str_contains($item[2], 'LANGUAGE_USE_INFORMAL_VARIANT')) {
+        if (\preg_match('~(?<![\w-])(Sie|Ihnen|Ihr\w*)(?![\w-])~u', $item[2], $address) === 1) {
+            $errors[] = "de.xml: {$item[1]} addresses the reader (\"{$address[1]}\") without the LANGUAGE_USE_INFORMAL_VARIANT check";
+            continue;
+        }
+        $rest = $item[2];
+    } else {
+        // the informal branches may use "du"; everything else (the formal branch and the text around the conditions) may not
+        $rest = withoutInformalBranches($item[2]);
     }
-    if (\preg_match('~(?<![\w-])(du|dich|dir|dein\w*|Sie|Ihnen|Ihr\w*)(?![\w-])~u', $item[2], $address) === 1) {
-        $errors[] = "de.xml: {$item[1]} addresses the reader (\"{$address[1]}\") without the LANGUAGE_USE_INFORMAL_VARIANT check";
+    $rest = \preg_replace('~\{[^}]*\}|<[^>]*>~', ' ', $rest) ?? $rest;
+    if (\preg_match('~(?<![\w-])(du|dich|dir|dein\w*)(?![\w-])~iu', $rest, $address) === 1) {
+        $errors[] = "de.xml: {$item[1]} addresses the reader informally (\"{$address[1]}\") outside the LANGUAGE_USE_INFORMAL_VARIANT branch";
+    } elseif (\preg_match('~(?:^\s*|[.!?:]\s+|\n\s*)(' . IMPERATIVES . ')(?![\w-])~u', $rest, $address) === 1) {
+        $errors[] = "de.xml: {$item[1]} starts a sentence with the informal imperative \"{$address[1]}\" outside the LANGUAGE_USE_INFORMAL_VARIANT branch";
     }
 }
 

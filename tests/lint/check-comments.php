@@ -115,6 +115,9 @@ foreach (files(['files', 'files_wcf'], ['.php']) as $relative => $path) {
             continue;
         }
         $line = $token[2];
+        if (\preg_match('~^(//|/\*\*?)\s*@phpstan-ignore~', $token[1]) === 1) {
+            continue;
+        }
 
         $j = $i + 1;
         while ($j < $count) {
@@ -147,6 +150,13 @@ foreach (files(['files', 'files_wcf'], ['.php']) as $relative => $path) {
     for ($i = 0; $i < $count; $i++) {
         $token = $tokens[$i];
         if (!\is_array($token) || $token[0] !== \T_FUNCTION) {
+            continue;
+        }
+        $u = $i - 1;
+        while (\is_array($tokens[$u] ?? null) && $tokens[$u][0] === \T_WHITESPACE) {
+            $u--;
+        }
+        if (\is_array($tokens[$u] ?? null) && $tokens[$u][0] === \T_USE) {
             continue;
         }
         $line = $token[2];
@@ -227,7 +237,7 @@ foreach (files(['ts'], ['.ts']) as $relative => $path) {
             if (\str_contains($trimmed, '*/')) {
                 $inBlock = false;
                 $after = \trim($lines[$index + 1] ?? '');
-                $onDeclaration = (bool)\preg_match('~^(export\s+)?(default\s+)?(public\s+|private\s+|protected\s+|readonly\s+|static\s+|abstract\s+)*(class|interface|function|get\s|set\s|async\s|\w+[?!]?\s*[:(<])~', $after);
+                $onDeclaration = (bool)\preg_match('~^(export\s+)?(default\s+)?(public\s+|private\s+|protected\s+|readonly\s+|static\s+|abstract\s+)*(class|interface|function|get\s|set\s|async\s|#?\w+[?!]?\s*[:(<])~', $after);
                 if (!$onDeclaration) {
                     $report($relative, 'stray-comment', "Zeile {$blockStartLine}: Kommentar nicht direkt über Klasse/Funktion/Property, entfernen");
                 } else {
@@ -248,7 +258,7 @@ foreach (files(['ts'], ['.ts']) as $relative => $path) {
             $blockLines = [$trimmed];
             if (!$inBlock) {
                 $after = \trim($lines[$index + 1] ?? '');
-                $onDeclaration = (bool)\preg_match('~^(export\s+)?(default\s+)?(public\s+|private\s+|protected\s+|readonly\s+|static\s+|abstract\s+)*(class|interface|function|get\s|set\s|async\s|\w+[?!]?\s*[:(<])~', $after);
+                $onDeclaration = (bool)\preg_match('~^(export\s+)?(default\s+)?(public\s+|private\s+|protected\s+|readonly\s+|static\s+|abstract\s+)*(class|interface|function|get\s|set\s|async\s|#?\w+[?!]?\s*[:(<])~', $after);
                 if (!$onDeclaration) {
                     $report($relative, 'stray-comment', "Zeile {$lineNo}: Kommentar nicht direkt über Klasse/Funktion/Property, entfernen");
                 }
