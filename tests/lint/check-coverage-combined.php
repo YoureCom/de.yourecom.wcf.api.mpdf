@@ -3,13 +3,15 @@
 /**
  * YoureCom Standard: line coverage of the unit and the integration suite together, against the floor in
  * tests/coverage-minimum-combined.txt. Local only (check.sh, after the integration suite): the CI has no dev system, its floor
- * stays the unit only one of tests/coverage-minimum.txt. The integration suite runs the deployed copy of the plugin in the dev
- * system, so its report is mapped back to the files of this repository by the path below the application directory; only files
- * of the repository count, and the statements are those of the unit report. Like the unit floor, the combined floor only goes
- * up (with --raise: measured coverage minus one point, rounded down). Managed by _dev/standard (apply.php), do not edit here.
+ * stays the unit only one of tests/coverage-minimum.txt. The integration suite runs either the deployed copy of the plugin in
+ * the dev system or, with a classmap-first test bootstrap (e.g. a realtime process without WCF autoloading), this repository
+ * directly - its report is mapped back to the files of this repository by the path below whichever one applies; only files of
+ * the repository count, and the statements are those of the unit report. Like the unit floor, the combined floor only goes up
+ * (with --raise: measured coverage minus one point, rounded down). Managed by _dev/standard (apply.php), do not edit here.
  *
  * Usage: php tests/lint/check-coverage-combined.php <unit.xml> <integration.xml> [--raise]
  *        php tests/lint/check-coverage-combined.php --app-dir <installation dir>   (directory of the application in the dev system)
+ *        php tests/lint/check-coverage-combined.php --common-ancestor <a> <b>      (deepest directory shared by both paths)
  */
 
 namespace yourecom\standard;
@@ -102,6 +104,32 @@ if (($argv[1] ?? '') === '--app-dir') {
     exit(0);
 }
 
+/**
+ * Returns the deepest directory both paths share, so pcov can be told one directory to instrument that still
+ * covers either one (a plugin's classes may load from the deployed copy or, with a classmap-first test
+ * bootstrap such as a realtime process without WCF autoloading, straight from this repository).
+ */
+if (($argv[1] ?? '') === '--common-ancestor') {
+    $a = \explode('/', \rtrim(slashes($argv[2] ?? ''), '/'));
+    $b = \explode('/', \rtrim(slashes($argv[3] ?? ''), '/'));
+    $common = [];
+    foreach ($a as $index => $part) {
+        if (!isset($b[$index]) || \strcasecmp($b[$index], $part) !== 0) {
+            break;
+        }
+        $common[] = $part;
+    }
+
+    // no shared root (e.g. different drive letters) - the filesystem root is never a safe pcov.directory, fail instead
+    if ($common === []) {
+        fail(["'{$argv[2]}' and '{$argv[3]}' share no common directory"]);
+    }
+
+    echo \implode('/', $common), "\n";
+
+    exit(0);
+}
+
 $unitReport = $argv[1] ?? '';
 $integrationReport = $argv[2] ?? '';
 $raise = \in_array('--raise', $argv, true);
@@ -119,14 +147,21 @@ if ($appDir === null) {
     fail(['The deployed plugin was not found in the dev system, so the integration coverage cannot be mapped']);
 }
 
-$integration = statements($integrationReport, slashes((string)(\realpath($appDir) ?: $appDir)) . '/');
+$integrationByDeployedPath = statements($integrationReport, slashes((string)(\realpath($appDir) ?: $appDir)) . '/');
+// a classmap-first test bootstrap (e.g. a realtime process without WCF autoloading) loads the plugin's own
+// classes straight from this repository even in the integration suite, never the deployed copy - fall back to
+// the same root the unit report uses for those
+$integrationByRepoPath = statements($integrationReport, $root);
 $statements = 0;
 $covered = 0;
 foreach ($unit as $name => $lines) {
-    $other = $integration[\preg_replace('~^files/~', '', $name) ?? $name] ?? [];
+    // both copies can be in the report (the process under test loads one, pcov lists the other with zero hits): a statement
+    // counts when either one covered it, so the copy that was not executed never hides the one that was
+    $deployed = $integrationByDeployedPath[\preg_replace('~^files/~', '', $name) ?? $name] ?? [];
+    $repository = $integrationByRepoPath[$name] ?? [];
     foreach ($lines as $number => $isCovered) {
         $statements++;
-        if ($isCovered || ($other[$number] ?? false)) {
+        if ($isCovered || ($deployed[$number] ?? false) || ($repository[$number] ?? false)) {
             $covered++;
         }
     }
