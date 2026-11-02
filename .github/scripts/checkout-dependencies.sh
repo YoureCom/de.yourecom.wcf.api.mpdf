@@ -19,10 +19,18 @@ if [[ -z "${TOKEN:-}" ]]; then
   exit 0
 fi
 
-for PACKAGE in "${PACKAGES[@]}"; do
+# the packages those packages require, too (clan.board.wbb -> clan.board -> clan): PHPStan needs their classes as well
+QUEUE=("${PACKAGES[@]}")
+DONE=" "
+for ((i = 0; i < ${#QUEUE[@]}; i++)); do
+  PACKAGE="${QUEUE[$i]}"
+  [[ "$DONE" == *" $PACKAGE "* ]] && continue
+  DONE+="$PACKAGE "
   # the repositories keep the camel case of the plugin folders, GitHub resolves the name case-insensitively
   git clone --quiet --depth 1 --branch "$BRANCH" "https://x-access-token:${TOKEN}@github.com/YoureCom/${PACKAGE}.git" "$PACKAGE" \
     || git clone --quiet --depth 1 "https://x-access-token:${TOKEN}@github.com/YoureCom/${PACKAGE}.git" "$PACKAGE" \
     || { echo "::warning::$PACKAGE could not be cloned, PHPStan runs without it"; continue; }
   echo "Cloned $PACKAGE"
+  mapfile -t NESTED < <(sed -n 's:.*<requiredpackage[^>]*>\(de\.yourecom\.[^<]*\)</requiredpackage>.*:\1:p' "$PACKAGE/package.xml" 2>/dev/null)
+  QUEUE+=("${NESTED[@]}")
 done

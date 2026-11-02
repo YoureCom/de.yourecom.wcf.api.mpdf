@@ -53,6 +53,22 @@ jobs:
           TOKEN: ${{ secrets.YOURECOM_DEPENDENCY_TOKEN }}
         run: bash plugin/.github/scripts/checkout-dependencies.sh plugin
 
+      # the XSDs of the own PIPs (https://www.yourecom.de/XSD/6.2/<pip>.xsd) live in de.yourecom.website; tests/lint/check-xsd.php
+      # finds them next to the plugin (../de.yourecom.website/files/XSD/6.2), as in the local plugins folder
+      - name: XSDs of the own PIPs
+        working-directory: .
+        env:
+          TOKEN: ${{ secrets.YOURECOM_DEPENDENCY_TOKEN }}
+        run: |
+          if grep -lq 'yourecom\.de/XSD/' plugin/*.xml 2>/dev/null && [[ ! -d de.yourecom.website ]]; then
+            if [[ -z "${TOKEN:-}" ]]; then
+              echo "::warning::YOURECOM_DEPENDENCY_TOKEN is not set, the XSD check cannot find the XSDs of the own PIPs"
+            else
+              git clone --quiet --depth 1 --branch 6.2 "https://x-access-token:${TOKEN}@github.com/YoureCom/de.yourecom.website.git" de.yourecom.website \
+                || echo "::warning::de.yourecom.website could not be cloned, the XSD check cannot find the XSDs of the own PIPs"
+            fi
+          fi
+
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
