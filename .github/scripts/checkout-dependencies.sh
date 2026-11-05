@@ -59,6 +59,7 @@ finish() {
     for P in $WOLTLAB; do
       [[ -d "$P/files/lib" ]] && echo "    - ../$P/files/lib/"
     done
+    :
   } > "$PLUGIN/phpstan.ci.packages.neon"
   
 }

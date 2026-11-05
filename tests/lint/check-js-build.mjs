@@ -63,7 +63,9 @@ if (existsSync(markFile) && readFileSync(markFile, "utf8").trim() === fingerprin
 const out = mkdtempSync(join(tmpdir(), "yourecom-js-"));
 
 function read(dir) {
-  return new Map(files(dir).map((file) => [relative(dir, file).replaceAll("\\", "/"), readFileSync(file, "utf8").replaceAll("\r\n", "\n")]));
+  return new Map(
+    files(dir).map((file) => [relative(dir, file).replaceAll("\\", "/"), readFileSync(file, "utf8").replaceAll("\r\n", "\n")]),
+  );
 }
 
 try {
@@ -77,7 +79,8 @@ try {
     else if (committed.get(name) !== content) problems.push(`outdated: ${buildDir}/${name}`);
   }
   for (const name of committed.keys()) {
-    if (name.endsWith(".js") && !fresh.has(name) && !name.startsWith("3rdParty/")) problems.push(`no TypeScript source for: ${buildDir}/${name}`);
+    if (name.endsWith(".js") && !fresh.has(name) && !name.startsWith("3rdParty/"))
+      problems.push(`no TypeScript source for: ${buildDir}/${name}`);
   }
 
   if (problems.length > 0) {
