@@ -28,6 +28,12 @@ $statements = (int)$xml->project->metrics['statements'];
 $covered = (int)$xml->project->metrics['coveredstatements'];
 $percent = $statements > 0 ? 100 * $covered / $statements : 100.0;
 $floorFile = ROOT . '/tests/coverage-minimum.txt';
+// a plugin whose tests partly need the booted Suite measures less in the CI: tests/coverage-minimum-ci.txt is its fixed floor there
+$ciFloorFile = ROOT . '/tests/coverage-minimum-ci.txt';
+if (\getenv('GITHUB_ACTIONS') === 'true' && \is_file($ciFloorFile)) {
+    $floorFile = $ciFloorFile;
+    $raise = false;
+}
 $minimum = (float)\trim((string)@\file_get_contents($floorFile));
 
 \printf("Coverage of the unit suite: %.2f%% (%d of %d statements), floor %.2f%%\n", $percent, $covered, $statements, $minimum);
