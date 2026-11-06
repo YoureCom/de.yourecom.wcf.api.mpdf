@@ -34,9 +34,10 @@ VERSION="$(sed -n 's:.*<version>\(.*\)</version>.*:\1:p' "$ROOT/package.xml" | h
 [[ -n "$PACKAGE" && -n "$VERSION" ]] || { echo "package.xml has no name or version" >&2; exit 1; }
 
 # the package ships the committed JavaScript, nothing compiles it here: a stale or missing build would load fine locally
-# (deploy.sh compiles into the dev system) and fail on the live site, so stop before packing
+# (deploy.sh compiles into the dev system) and fail on the live site, so stop before packing; its output goes to stderr,
+# stdout carries only the path of the archive (the release workflow reads it)
 if [[ -f "$ROOT/tests/lint/check-js-build.mjs" ]]; then
-  (cd "$ROOT" && node tests/lint/check-js-build.mjs) || { echo "the committed JavaScript is out of date, run: npm run build" >&2; exit 1; }
+  (cd "$ROOT" && node tests/lint/check-js-build.mjs >&2) || { echo "the committed JavaScript is out of date, run: npm run build" >&2; exit 1; }
 fi
 
 rm -rf "$STAGE"

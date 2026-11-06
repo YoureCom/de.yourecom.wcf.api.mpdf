@@ -13,8 +13,10 @@ permissions:
   contents: read
 
 jobs:
+  # a called workflow gets no secrets by itself: without them the required packages are not cloned and the checks fail
   checks:
     uses: ./.github/workflows/ci.yml
+    secrets: inherit
 
   release:
     name: Build and publish
@@ -40,9 +42,26 @@ jobs:
             echo "prerelease=--prerelease" >> "$GITHUB_OUTPUT"
           fi
 
+      # the package build compiles the TypeScript once to prove the committed JavaScript is current (check-js-build.mjs),
+      # which needs the compiler from node_modules
+      - uses: actions/setup-node@v7
+        if: ${{ hashFiles('tsconfig.json') != '' }}
+        with:
+          node-version: 22
+
+      # the WoltLab packages come from GitHub, the lock file names them by SSH
+      - name: npm install
+        if: ${{ hashFiles('tsconfig.json') != '' }}
+        run: |
+          git config --global url."https://github.com/".insteadOf ssh://git@github.com/
+          if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
+
+      # in its own assignment: inside `echo "archive=$(...)"` a failed build would go unnoticed, echo succeeds
       - name: Build the package
         id: build
-        run: echo "archive=$(bash .github/scripts/build-package.sh "$RUNNER_TEMP/package")" >> "$GITHUB_OUTPUT"
+        run: |
+          archive="$(bash .github/scripts/build-package.sh "$RUNNER_TEMP/package")"
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
 
       - name: Publish the release
         env:
