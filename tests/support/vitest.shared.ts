@@ -21,6 +21,9 @@ export const coreFallbackAlias = {
  * a string alias of Vite would also take every sub path and map it below the replacement file.
  */
 export const withCoreFallback = (aliases: Record<string, string>): { find: RegExp; replacement: string }[] => [
-  ...Object.entries(aliases).map(([find, replacement]) => ({ find: new RegExp(`^${find.replace(/[.*+?^${}()|[\]]/g, "\\$&")}$`), replacement })),
+  ...Object.entries(aliases).map(([find, replacement]) => ({
+    find: new RegExp(`^${find.replace(/[.*+?^${}()|[\]]/g, "\\$&")}$`),
+    replacement,
+  })),
   coreFallbackAlias,
 ];
