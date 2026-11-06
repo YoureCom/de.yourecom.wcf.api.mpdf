@@ -4,10 +4,14 @@ name: Release
 # Builds the package for a tag like v6.2.14 or v6.2.14-beta.2 and attaches it to a GitHub release.
 # Nothing is deployed: uploading to yourecom.de stays a manual step that needs Marcel's approval
 # (before that: bash ../_dev/release-check.sh <plugin>, it needs SSH access to the live server).
+#
+# Started by hand on a branch (gh workflow run release.yml -R YoureCom/<plugin> --ref 6.2) it is a rehearsal: all checks and the
+# package build, no comparison with a tag and nothing published. So a broken release path shows before the next tag does.
 
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -33,7 +37,7 @@ jobs:
           version="$(sed -n 's:.*<version>\(.*\)</version>.*:\1:p' package.xml | head -1)"
           # "6.2.14 Beta 2" and "v6.2.14-beta.2" both become "6.2.14.beta.2"
           normalize() { echo "$1" | tr '[:upper:]' '[:lower:]' | sed -e 's/^v//' -e 's/[ -]/./g'; }
-          if [ "$(normalize "$version")" != "$(normalize "$GITHUB_REF_NAME")" ]; then
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$(normalize "$version")" != "$(normalize "$GITHUB_REF_NAME")" ]; then
             echo "::error::The tag $GITHUB_REF_NAME does not match the version '$version' in package.xml"
             exit 1
           fi
@@ -64,6 +68,7 @@ jobs:
           echo "archive=$archive" >> "$GITHUB_OUTPUT"
 
       - name: Publish the release
+        if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
