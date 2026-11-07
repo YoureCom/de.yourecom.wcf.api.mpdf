@@ -190,6 +190,13 @@ jobs:
         with:
           path: plugin
 
+      # the unit tests of a plugin load core classes from this folder next to it, as in the job above
+      - uses: actions/checkout@v7
+        with:
+          repository: WoltLab/WCF
+          ref: '6.2'
+          path: wcf
+
       # the unit tests of an add-on load classes of its base plugin from the folder next to it, as in the job above
       - name: Required YoureCom packages
         working-directory: .
