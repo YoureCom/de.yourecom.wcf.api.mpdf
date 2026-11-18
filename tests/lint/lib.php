@@ -281,7 +281,7 @@ function constantsSource(string $pluginDir): string
         ' *',
         ' * @author  Marcel Beckers',
         ' * @license YoureCom License - Commercial (YCLC)  <https://www.yourecom.de/shop/licence-commercial/>',
-        ' * @package ' . \basename($pluginDir),
+        ' * @package ' . (\trim((string)(@\simplexml_load_file($pluginDir . '/package.xml')['name'] ?? '')) ?: \basename($pluginDir)),
         ' */',
         '',
         '// option constants',

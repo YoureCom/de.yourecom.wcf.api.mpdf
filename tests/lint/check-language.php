@@ -92,6 +92,18 @@ foreach (\array_diff($en, $de) as $key) {
     $errors[] = "missing in de.xml: {$key}";
 }
 
+// a variable defined twice in one file: only one of the texts survives the import
+foreach (['de', 'en'] as $languageCode) {
+    $file = ROOT . "/language/{$languageCode}.xml";
+    if (!\is_file($file)) {
+        continue;
+    }
+    \preg_match_all('~<item name="([^"]+)"~', (string)\file_get_contents($file), $names);
+    foreach (\array_keys(\array_filter(\array_count_values($names[1]), static fn (int $count): bool => $count > 1)) as $duplicate) {
+        $errors[] = "duplicate in {$languageCode}.xml: {$duplicate}";
+    }
+}
+
 \preg_match_all('~<item name="([^"]+)"><!\[CDATA\[(.*?)\]\]></item>~s', \is_file(ROOT . '/language/de.xml') ? (string)\file_get_contents(ROOT . '/language/de.xml') : '', $items, \PREG_SET_ORDER);
 foreach ($items as $item) {
     if (!\str_contains($item[2], 'LANGUAGE_USE_INFORMAL_VARIANT')) {
