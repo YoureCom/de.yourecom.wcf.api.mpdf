@@ -43,7 +43,9 @@
  *                   DOMXPath variable is XPath, not SQL, and is skipped
  *  - sql-variable:  `->prepare()`/`->prepareStatement()`/`->prepareUnmanaged()` always take `$sql` as first argument:
  *                   the SQL is assigned to `$sql` before, never written into the call or passed as another expression
- *                   (`$this->sql`, `$data['sql']`). Checked in files/, files_wcf/ and tests/ (Marcel 22.10.2026)
+ *                   (`$this->sql`, `$data['sql']`). Checked in files/, files_wcf/ and tests/ (Marcel 22.10.2026). An
+ *                   argument that is visibly an array (`[…]`, `array(…)`, `array_*(…)`) is no SQL, it is the prepare()
+ *                   of another interface such as IViewableLikeProvider::prepare(array $likes)
  *
  * Rules that need the types of PHPStan are PHPStan rules (tests/phpstan): getPermission() compared with true/false
  * (yourecom.permissionStrict), legacy actions that change data without the token (yourecom.secureAction), endpoints that
@@ -267,6 +269,12 @@ foreach (files(['files', 'files_wcf', 'tests'], ['.php']) as $relative => $path)
         }
         $argument = nextToken($tokens, $open, 1);
         $after = $argument === null ? null : nextToken($tokens, $argument, 1);
+        $isArray = $argument !== null && ($tokens[$argument] === '[' || (\is_array($tokens[$argument])
+            && (\in_array($tokens[$argument][0], [\T_ARRAY], true) || \str_starts_with(\ltrim($tokens[$argument][1], '\\'), 'array_'))
+            && $after !== null && $tokens[$after] === '('));
+        if ($isArray) {
+            continue;
+        }
         $isSqlVariable = $argument !== null && \is_array($tokens[$argument]) && $tokens[$argument][0] === \T_VARIABLE
             && $tokens[$argument][1] === '$sql' && $after !== null && \in_array($tokens[$after], [',', ')'], true);
         if (!$isSqlVariable) {
